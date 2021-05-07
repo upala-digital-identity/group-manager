@@ -21,9 +21,19 @@ The following assumes the use of `node@>=10`.
 
 
 
-# Commands (under construction)
+# Commands
 
-Command parseBalanceMap
+## createGroup
+input: manager address
+returns: groupID
+
+## getPoolAddress 
+input: groupID
+returns group's pool address 
+
+## generateTree
+input:
+csv file: [upalaId, score]
 
 use this from merkle-distributor:
 const { claims: innerClaims, merkleRoot, tokenTotal } = parseBalanceMap({
@@ -32,39 +42,64 @@ const { claims: innerClaims, merkleRoot, tokenTotal } = parseBalanceMap({
         [wallets[2].address]: 250,
       })
 
+returns what parseBalanceMap returns
+{
+  merkleRoot,
+  tokenTotal,
+  claims,
+}
 
-Comand pushToUpala
-See API
+## increaseBaseScore(uint newBotReward) 
+
+## pushRootToUpala
+input generateTree's output
+sends transaction to Upala (see API) 
 retuns timestamp
 
-
-Command pushToDB
+## pushToDB
+Input: generateTree's output, timestamp, groupID
+sends data to DB (see Upala's infrastructure)
 Example message to DB:
 {
-groupID: "0x11111ed78501edb696adca9e41e78d8256b6"
-merkleRoot: '0x11111ed78501edb696adca9e41e78d8256b61cfac45612fa0434d7cf87d92345',
-tokenTotal: '0x02ee',
-timestamp: '0xa35d',
-claims: {
-    [wallet0.address]: {
-      index: 0,
-      amount: '0xc8',
-      proof: ['0x2a411ed78501edb696adca9e41e78d8256b61cfac45612fa0434d7cf87d916c6'],
+    groupID: "0x11111ed78501edb696adca9e41e78d8256b6",
+    merkleRoot: '0x11111e501...fa0434d7cf87d92345',
+    tokenTotal: '0x02ee',
+    timestamp: '0xa35d',
+    claims: {
+        [wallet0.address]: {
+          index: 0,
+          amount: '0xc8',
+          proof: ['0x2a411ed78501edb....fa0434d7cf87d916c6'],
+        },
+        [wallet1.address]: {
+          index: 1,
+          amount: '0x012c',
+          proof: [
+            '0xbfeb956a3b70505...55c0a5fcab57124cb36f7b',
+            '0xd31de46890d4a77...73ec69b51efe4c9a5a72fa',
+          ],
+        },
     },
-    [wallet1.address]: {
-      index: 1,
-      amount: '0x012c',
-      proof: [
-        '0xbfeb956a3b705056020a3b64c540bff700c0f6c96c55c0a5fcab57124cb36f7b',
-        '0xd31de46890d4a77baeebddbd77bf73b5c626397b73ee8c69b51efe4c9a5a72fa',
-      ],
-    },
-    [wallets[2].address]: {
-      index: 2,
-      amount: '0xfa',
-      proof: [
-        '0xceaacce7533111e902cc548e961d77b23a4d8cd073c6b68ccf55c62bd47fc36b',
-        '0xd31de46890d4a77baeebddbd77bf73b5c626397b73ee8c69b51efe4c9a5a72fa',
-      ],
-    },
-    })
+}
+
+
+## commitRootDeletion()
+hash = keccak256(abi.encodePacked("deleteRoot", newRoot, secret));
+sends transaction: commitHash(bytes32 hash)
+
+## commitBaseScore(newScore, optional secret)
+hash = keccak256(abi.encodePacked("setBaseScore", newScore, secret));
+sends transaction: commitHash(bytes32 hash)
+
+## commitWithdrawal(newScore, recipient,  amount, optional secret)
+hash = keccak256(abi.encodePacked("withdrawFromPool", recipient,  amount, secret));
+sends transaction: commitHash(bytes32 hash)
+
+## deleteRoot(bytes32 root, bytes32 secret)
+sends transaction: deleteRoot(bytes32 root, bytes32 secret)
+
+## setBaseScore(uint botReward, bytes32 secret)
+sends transaction: setBaseScore(uint botReward, bytes32 secret)
+
+## withdrawFromPool(address recipient, uint amount, bytes32 secret) 
+sends transaction: withdrawFromPool(address recipient, uint amount, bytes32 secret)
