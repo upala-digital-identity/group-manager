@@ -68,12 +68,12 @@ Example message to DB:
     claims: {
         [wallet0.address]: {
           index: 0,
-          amount: '0xc8',
+          score: '0xc8',
           proof: ['0x2a411ed78501edb....fa0434d7cf87d916c6'],
         },
         [wallet1.address]: {
           index: 1,
-          amount: '0x012c',
+          score: '0x012c',
           proof: [
             '0xbfeb956a3b70505...55c0a5fcab57124cb36f7b',
             '0xd31de46890d4a77...73ec69b51efe4c9a5a72fa',
