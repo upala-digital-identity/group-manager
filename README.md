@@ -37,19 +37,19 @@ csv file: [upalaId, score]
 
 use this from merkle-distributor:
 
-  const { claims: innerClaims, merkleRoot, tokenTotal } = parseBalanceMap({
-          [wallet0.address]: 200,
-          [wallet1.address]: 300,
-          [wallets[2].address]: 250,
-        })
+    const { claims: innerClaims, merkleRoot, tokenTotal } = parseBalanceMap({
+      [wallet0.address]: 200,
+      [wallet1.address]: 300,
+      [wallets[2].address]: 250,
+    })
 
 returns what parseBalanceMap returns
 
-  {
-    merkleRoot,
-    tokenTotal,
-    claims,
-  }
+    {
+      merkleRoot,
+      tokenTotal,
+      claims,
+    }
 
 ## increaseBaseScore(uint newBotReward) 
 
@@ -63,27 +63,27 @@ Input: generateTree's output, timestamp, groupID
 sends data to DB (see Upala's infrastructure)
 Example message to DB:
 
-  {
-      groupID: "0x11111ed78501edb696adca9e41e78d8256b6",
-      merkleRoot: '0x11111e501...fa0434d7cf87d92345',
-      tokenTotal: '0x02ee',
-      timestamp: '0xa35d',
-      claims: {
-          [wallet0.address]: {
-            index: 0,
-            score: '0xc8',
-            proof: ['0x2a411ed78501edb....fa0434d7cf87d916c6'],
-          },
-          [wallet1.address]: {
-            index: 1,
-            score: '0x012c',
-            proof: [
-              '0xbfeb956a3b70505...55c0a5fcab57124cb36f7b',
-              '0xd31de46890d4a77...73ec69b51efe4c9a5a72fa',
-            ],
-          },
-      },
-  }
+    {
+        groupID: "0x11111ed78501edb696adca9e41e78d8256b6",
+        merkleRoot: '0x11111e501...fa0434d7cf87d92345',
+        tokenTotal: '0x02ee',
+        timestamp: '0xa35d',
+        claims: {
+            [wallet0.address]: {
+              index: 0,
+              score: '0xc8',
+              proof: ['0x2a411ed78501edb....fa0434d7cf87d916c6'],
+            },
+            [wallet1.address]: {
+              index: 1,
+              score: '0x012c',
+              proof: [
+                '0xbfeb956a3b70505...55c0a5fcab57124cb36f7b',
+                '0xd31de46890d4a77...73ec69b51efe4c9a5a72fa',
+              ],
+            },
+        },
+    }
 
 
 ## commitRootDeletion()
