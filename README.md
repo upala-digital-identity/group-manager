@@ -59,14 +59,16 @@ sends transaction to Upala (see API)
 retuns timestamp
 
 ## pushToDB
-Input: generateTree's output, timestamp, groupID
+Input: generateTree's output, timestamp, groupAddress
 sends data to DB (see Upala's infrastructure)
+
 Example message to DB:
 
     {
-        groupID: "0x11111ed78501edb696adca9e41e78d8256b6",
+        groupAddress: "0x11111ed78501edb696adca9e41e78d8256b6",
+        groupManagerAddress: "0x33321ed78501edb696adca9e41e78d8256b6",
+        singature: "0x3asdgd78501edb696adca9e41e78dhdr5", 
         merkleRoot: '0x11111e501...fa0434d7cf87d92345',
-        tokenTotal: '0x02ee',
         timestamp: '0xa35d',
         claims: {
             [wallet0.address]: {
