@@ -3,6 +3,14 @@
 Tools to create and manage Upala groups. The goal of this iteration is to let future managers to play around with the protocol and understand better their needs. 
 All scores are published to the DB. It has an interface to view scores (??todo). 
 
+#### Interaction and references:
+
+- Uses [deployments](https://github.com/upala-digital-identity/deployments) for contracts ABIs and addresses.
+- Queries baseScore and bundleHash from [Upala subgraph](https://github.com/upala-digital-identity/subgraph-schema).
+- Reads and writes individual scores to [DB](https://github.com/upala-digital-identity/db).
+- Manages groups on-chain through [Upala groups](https://github.com/upala-digital-identity/upala/tree/master/contracts/pools).
+- Uses metadata scheme from [Upala groups](https://github.com/upala-digital-identity/upala/tree/master/contracts/pools).
+
 ## Initialization
 
 #### init
@@ -33,7 +41,6 @@ There are two types of pools: MerkleTreePool and SignedScoresPool. SignedScoresP
 - write **poolType** to confing.
 - call **createPool()** function of the selected poolFactory.
 - write the response address to **groupAddress** in config.
-
 
 ## Scores mangement
 Different pool types have different workflows of score management. Two pools are described in this doc: **Signed Scores Pool** and **Merkle Tree Pool**. There are also changes that use commit-reveal scheme in order to prevent group managers front-running exploding bots. 
@@ -88,12 +95,14 @@ returns what parseBalanceMap returns
 - send POST request to DB (see example message in [DB repo](https://github.com/upala-digital-identity/db)). Show db module error if there's one.
 
 ## Announcements
-Changes that require commit-reveal scheme
+Changes that require commit-reveal scheme. All commits are made through the same **commitHash(bytes32 hash)** function. The way hash is calculated is what differs for different changes. 
+
 
 #### commitBaseScore(newScore, optional secret)
 TBD
-hash = keccak256(abi.encodePacked("setBaseScore", newScore, secret));
-sends transaction: commitHash(bytes32 hash)
+- **hash = keccak256(abi.encodePacked("setBaseScore", newScore, secret))** - calculate commitment hash
+- call **commitHash(bytes32 hash)** function of the group contract
+- save timestamp 
 
 #### set-base-score
 Increasing base score doesn't require commit-reveal scheme and works for any pool-type. Group manager can increase **baseScore** at any time. Decreasing score requires a commit. The workflow for the command is as follows. 
@@ -105,22 +114,25 @@ Increasing base score doesn't require commit-reveal scheme and works for any poo
 
 #### commitRootDeletion()
 TBD
-hash = keccak256(abi.encodePacked("deleteRoot", newRoot, secret));
+**hash = keccak256(abi.encodePacked("deleteRoot", newRoot, secret))**
 sends transaction: commitHash(bytes32 hash)
 
 #### deleteRoot(bytes32 root, bytes32 secret)
 TBD
-sends transaction: deleteRoot(bytes32 root, bytes32 secret)
+send transaction: deleteRoot(bytes32 root, bytes32 secret)
 
 #### commitWithdrawal(newScore, recipient,  amount, optional secret)
 TBD
-hash = keccak256(abi.encodePacked("withdrawFromPool", recipient,  amount, secret));
-sends transaction: commitHash(bytes32 hash)
+- **hash = keccak256(abi.encodePacked("withdrawFromPool", recipient,  amount, secret))**
+- send transaction: commitHash(bytes32 hash)
 
 #### withdrawFromPool(address recipient, uint amount, bytes32 secret)
 TBD
-sends transaction: withdrawFromPool(address recipient, uint amount, bytes32 secret)
+send transaction: withdrawFromPool(address recipient, uint amount, bytes32 secret)
 
+## Metadata
+
+#### set-matadata
 
 
 ## Local storage
@@ -136,14 +148,14 @@ sends transaction: withdrawFromPool(address recipient, uint amount, bytes32 secr
     }
 
 #### secrets.js
-Stores access credentials. 
+Stores access credentials.
 
     module.exports = { 
         mnemonic: "test test test ... junk"
     };
 
 #### temp
-latest commit for setBaseScore (+secret)
+Commits: firstArgument (commitType), timestamp, other arguments, secret
 score bundle hashes (all published hashes)
 for merkle - current unpublished tree and root
 
