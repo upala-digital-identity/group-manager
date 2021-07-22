@@ -1,7 +1,10 @@
 # Upala group manager
 
-Tools to create and manage Upala groups. The goal of this iteration is to let future managers to play around with the protocol and understand better their needs. 
-All scores are published to the DB. It has an interface to view scores (??todo). 
+Tools to create and manage Upala groups. 
+All individual scores are published to the [DB](https://github.com/upala-digital-identity/db) and can be accesses by DApps. DB will also have a web UX for group managers to view scores.
+Base scores and score bundle hashes are stored on-chain. 
+The goal of this iteration is to let future managers to play around with the protocol and understand better their needs. 
+
 
 #### Interaction and references:
 
@@ -37,7 +40,7 @@ There are two types of pools: MerkleTreePool and SignedScoresPool. SignedScoresP
 - question: "Select group manager address:" (default: wallet[0] derived from the seed).
 - write group manager to config. 
 - question: "Select pool factory" ({options: {MerkleTreePool, SignedScoresPool}, default: SignedScoresPool})
-- retrieve pool factory address and abi by name from ./contracts/src (see example data structure [here](https://github.com/upala-digital-identity/upala-front/tree/master/packages/contracts/src) - will be in a separate module soon. todo)
+- retrieve pool factory address and abi by name from ./contracts/src (see example data structure [here](https://github.com/upala-digital-identity/upala-front/tree/master/packages/contracts/src) - will be in a [separate module](https://github.com/upala-digital-identity/deployments) soon.)
 - write **poolType** to confing.
 - call **createPool()** function of the selected poolFactory.
 - write the response address to **groupAddress** in config.
