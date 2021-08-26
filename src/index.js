@@ -3,12 +3,12 @@
 
 const { Command } = require('commander');
 const program = new Command();
-const group = require('./create-group.js');
+const group = require('./create-group-wiz.js');
 program.version('0.0.1');
 
-// program
-//   .option('-d, --debug', 'output extra debugging')
-//   .option('-g, --group-type <type>', 'flavour of group')
+program
+    .option('-d, --debug', 'output extra debugging')
+    .option('-g, --group-type <type>', 'flavour of group')
 
 program
     .command('group') // sub-command name
@@ -17,7 +17,7 @@ program
 
     // function to execute when command is uses
     .action(function () {
-        group();
+        group;
     });
 
 program.parse(process.argv);
