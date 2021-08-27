@@ -41,7 +41,7 @@ There are two types of pools: MerkleTreePool and SignedScoresPool. SignedScoresP
 - write group manager to config. 
 - question: "Select pool factory" ({options: {MerkleTreePool, SignedScoresPool}, default: SignedScoresPool})
 - retrieve pool factory address and abi by name from ./contracts/src (see example data structure [here](https://github.com/upala-digital-identity/upala-front/tree/master/packages/contracts/src) - will be in a [separate module](https://github.com/upala-digital-identity/deployments) soon.)
-- write **poolType** to confing.
+- write **poolFactoryAddress** to confing.
 - call **createPool()** function of the selected poolFactory.
 - write the response address to **groupAddress** in config.
 
@@ -100,6 +100,8 @@ returns what parseBalanceMap returns
 ## Announcements
 Changes that require commit-reveal scheme. All commits are made through the same **commitHash(bytes32 hash)** function. The way hash is calculated is what differs for different changes. 
 
+todo
+desribe attackWindow, executionWindow.
 
 #### commitBaseScore(newScore, optional secret)
 TBD
@@ -146,7 +148,7 @@ send transaction: withdrawFromPool(address recipient, uint amount, bytes32 secre
       network: "rinkeby",
       groupManager: "0x35ab...2232",
       poolAddress: "0x35ab...2277",
-      poolType: "",
+      poolFactoryAddress: "",
       secretsPath: "./path/to/secrets.js"
     }
 

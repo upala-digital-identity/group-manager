@@ -1,18 +1,18 @@
 {
-  "name": "@uniswap/merkle-distributor",
+  "name": "@upala/group-manager",
   "author": {
-    "name": "Moody Salem"
+    "name": "Petr Porobov"
   },
-  "description": "📦 A smart contract that distributes a balance of tokens according to a merkle root",
-  "version": "1.0.1",
-  "homepage": "https://uniswap.org",
+  "description": "Tools for upala group managers",
+  "version": "0.1",
+  "main": "src/group-manager.js",
+  "homepage": "https://docs.upala.io",
   "keywords": [
-    "uniswap",
-    "erc20"
+    "upala"
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/Uniswap/merkle-distributor"
+    "url": "https://github.com/upala-digital-identity/group-manager"
   },
   "files": [
     "build"
@@ -26,7 +26,7 @@
     "@types/mocha": "^5.2.7",
     "axios": "^0.20.0",
     "chai": "^4.2.0",
-    "commander": "^6.1.0",
+    "commander": "^6.2.1",
     "ethereum-waffle": "^3.0.0",
     "ethereumjs-util": "^7.0.4",
     "mocha": "^6.2.2",
@@ -44,5 +44,8 @@
     "generate-merkle-root": "ts-node scripts/generate-merkle-root.ts",
     "generate-merkle-root:example": "ts-node scripts/generate-merkle-root.ts --input scripts/example.json",
     "prepublishOnly": "yarn test"
+  },
+  "dependencies": {
+    "inquirer": "^8.1.2"
   }
 }
