@@ -38,7 +38,7 @@ There are two types of pools: MerkleTreePool and SignedScoresPool. SignedScoresP
 
 #### create-group [--manger address --poolFactory address]
 - question: "Select group manager address:" (default: wallet[0] derived from the seed).
-- write group manager to config. 
+- write group manager to config.
 - question: "Select pool factory" ({options: {MerkleTreePool, SignedScoresPool}, default: SignedScoresPool})
 - retrieve pool factory address and abi by name from ./contracts/src (see example data structure [here](https://github.com/upala-digital-identity/upala-front/tree/master/packages/contracts/src) - will be in a [separate module](https://github.com/upala-digital-identity/deployments) soon.)
 - write **poolFactoryAddress** to confing.
