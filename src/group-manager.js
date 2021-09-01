@@ -17,6 +17,52 @@ let wallet = new ethers.Wallet(
     "0xdf57089febbacf7ba0bc227dafbffa9fc08a93fdc68e1e42411a14efcf23656e", 
     customHttpProvider);
 
+// Interacting with smart contracts
+class PoolFactory {
+    constructor(wallet, upalaConstants) {
+        this.wallet = wallet;
+        this.upalaConstants = upalaConstants;
+        this.gasPrice = "";
+        this.pool; // hm.. smart contract should be available here
+      }
+    
+    deploy() { 
+        // return initialized pool contract
+    }
+
+    attach(address) {
+        // return initialised pool contract
+    }
+
+    publishBundle(bundle) {
+    }
+
+    // 
+    setBaseScore(newScore) {
+    }
+    setGasPrice(){
+    }
+    commit(){}
+
+}
+
+class Graph {
+    constructor(endpoint) {
+        this.endpoint = endpoint;
+    }
+    // "is this bundleHash deleted"
+    // "what is the current base score for the pool address"
+}
+
+class DB {
+    publishBundle(){}
+
+}
+
+class Bundle {
+    constructor() {
+    }
+}
 
 
 // bind to existing group
