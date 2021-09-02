@@ -33,17 +33,6 @@ class PoolFactory {
     attach(address) {
         // return initialised pool contract
     }
-
-    publishBundle(bundle) {
-    }
-
-    // 
-    setBaseScore(newScore) {
-    }
-    setGasPrice(){
-    }
-    commit(){}
-
 }
 
 class Graph {
@@ -55,15 +44,72 @@ class Graph {
 }
 
 class DB {
-    publishBundle(){}
+    constructor(endpoint) {}
+    publishBundle(bundle){}
 
 }
 
 class Bundle {
-    constructor() {
+    constructor(wallet, workdir) {
+        this.state = "" // "" -> hash -> chain -> signed -> live
+        this.readWorkDir()
+        this.bundle = ""  // json with all fields
+    }
+    readWorkDir() {
+        // You've got bundles that are not finalized
+    }
+    newBundle(csv) {
+    }
+
+    nextStep() {
+        // hash: check csv // create hash
+        // chain: publish hash on-chain      <--- append task starts here
+        // signed: sign scores with 
+        // live: pushed to db
+    }
+    
+    publish(csv) {
+        let bundle = Bundle.newBundle(csv)
+        this.pool.publishBundle(bundle)
+        DB.publishBundle(bundle)
+    }
+
+    append(csv, existingBundleID) {
+        let bundle = new Bundle(csv)
+        DB.publishBundle(bundle)
     }
 }
 
+class PoolManager {
+    constructor(wallet, upalaConstants, poolAddress, workdir){
+        if (poolAddress) {
+            this.pool = PoolFactory.attach() 
+        }
+        else {
+            this.pool = PoolFactory.deploy()
+        }        
+    }
+    
+    publishBundle(csv) {
+        Bundle.newBundle()
+    }
+    appendToBundle(csv, existingBundleID) {
+        Bundle.append(csv, existingBundleID)
+    }
+    // if something went wrong during prevoius task
+    finalizeBundle() {
+        Bundle.finalize()
+    }
+
+
+    // Contract functions
+    setBaseScore(newScore) {
+    }
+    setGasPrice(){
+    }
+    commit(){}
+
+}
 
 // bind to existing group
 exports.attachToGroup = async function(poolContractAddress) {
