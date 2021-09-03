@@ -50,34 +50,89 @@ class DB {
 }
 
 class Bundle {
-    constructor(wallet, workdir) {
-        this.state = "" // "" -> hash -> chain -> signed -> live
-        this.readWorkDir()
-        this.bundle = ""  // json with all fields
-    }
-    readWorkDir() {
-        // You've got bundles that are not finalized
-    }
-    newBundle(csv) {
-    }
-
-    nextStep() {
-        // hash: check csv // create hash
-        // chain: publish hash on-chain      <--- append task starts here
-        // signed: sign scores with 
-        // live: pushed to db
+    constructor(initiatedPool, workdir) {
+        this._readWorkDir()
+        this.dBtransaction = "" // 
     }
     
-    publish(csv) {
-        let bundle = Bundle.newBundle(csv)
+    // if workdir is clean new score bundle can be created
+    publishNew(csv) {
+        if (this._noBundles) {
+            this.csv = csv
+            this.process()
+        } else {
+            console.log("Run process")
+        }
+    }
+
+    // if workdir is clean scores can be appended to an existing bundle 
+    // Signed scores pool only
+    append(csv, bundleID) {
+        if (this._noBundles) {
+            this.csv = csv
+            this.bundleID = bundleID
+            this.process()
+        } else {
+            console.log("Run process")
+        }
+    }
+
+    // if there's an unprocessed bundle, this function should be called
+    // new -> ☑️ bundleID -> ☑️ chain -> ☑️ signed -> ☑️ live
+    process() {
+        if (!this._noBundles) {
+            if (!this.isValidCSV) {
+                _checkCSV()
+            }
+            if (!this.bundleID) {
+                this.bundleID = newBundle(this.csv)
+                this.state = "hash"
+            }
+            if (this.state = "hash") {
+                _pushToChain(csv)
+                this.state = "chain"
+            }
+            if (this.state == "chain") {
+                _pushToDb(csv, existingBundleID)
+                this.state = "signed"
+            }
+    
+            // hash: check csv // create hash
+            // chain: publish hash on-chain      <--- append task starts here
+            // signed: sign scores with 
+            // live: pushed to db
+        }
+    }
+
+    _noBundles() {
+        return true
+    }
+
+    _readWorkDir() {
+        this.csv = ""
+        this.isValidCSV = ""
+        this.bundleID = ""
+        this.ethTransaction = ""
+        this.dbTransaction = ""   
+        // Log You've got bundles that are not finalized
+    }
+
+    _checkCSV() {
+    }
+
+    _pushToChain() {
         this.pool.publishBundle(bundle)
         DB.publishBundle(bundle)
     }
 
-    append(csv, existingBundleID) {
+    _pushToDb() {
         let bundle = new Bundle(csv)
         DB.publishBundle(bundle)
     }
+
+
+    
+
 }
 
 class PoolManager {
@@ -85,11 +140,12 @@ class PoolManager {
         if (poolAddress) {
             this.pool = PoolFactory.attach() 
         }
-        else {
-            this.pool = PoolFactory.deploy()
-        }        
     }
-    
+
+    deploy() {
+        this.pool = PoolFactory.deploy()
+    }
+
     publishBundle(csv) {
         Bundle.newBundle()
     }
