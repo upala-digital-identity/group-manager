@@ -1,4 +1,5 @@
 const ethers = require('ethers');
+const { isReturnStatement } = require('typescript');
 
 const poolFactoryAbi = [
     "function balanceOf(address) view returns (uint)",
@@ -52,13 +53,22 @@ class DB {
 class Bundle {
     constructor(initiatedPool, workdir) {
         this._readWorkDir()
-        this.dBtransaction = "" // 
     }
     
+    _readWorkDir() {
+        this.csv = "" // only valid csvs come to this point
+        this.bundleID = ""
+        this.ethTx = ""
+        this.dbTransaction = ""   
+        // Log You've got bundles that are not finalized
+    }
+
     // if workdir is clean new score bundle can be created
     publishNew(csv) {
-        if (this._noBundles) {
-            this.csv = csv
+        if (!this._processingBundle) {
+            this.csv = _checkCSV(csv)
+
+
             this.process()
         } else {
             console.log("Run process")
@@ -68,9 +78,13 @@ class Bundle {
     // if workdir is clean scores can be appended to an existing bundle 
     // Signed scores pool only
     append(csv, bundleID) {
-        if (this._noBundles) {
-            this.csv = csv
-            this.bundleID = bundleID
+        if (!this._processingBundle) {
+            this.csv = _checkCSV(csv)
+            this.bundleID = _checkBundleID(bundleID)
+
+
+            this.ethTx = "ok"
+            this.ethTxMined = true
             this.process()
         } else {
             console.log("Run process")
@@ -80,22 +94,12 @@ class Bundle {
     // if there's an unprocessed bundle, this function should be called
     // new -> ☑️ bundleID -> ☑️ chain -> ☑️ signed -> ☑️ live
     process() {
-        if (!this._noBundles) {
-            if (!this.isValidCSV) {
-                _checkCSV()
-            }
-            if (!this.bundleID) {
-                this.bundleID = newBundle(this.csv)
-                this.state = "hash"
-            }
-            if (this.state = "hash") {
-                _pushToChain(csv)
-                this.state = "chain"
-            }
-            if (this.state == "chain") {
-                _pushToDb(csv, existingBundleID)
-                this.state = "signed"
-            }
+        if (this._processingBundle) {
+            
+            !(this.bundleID) ? this.calcBundleId() : {}
+            !(this.ethTx) ? this._pushToChain() : {}
+            !(this.ethTxMined) ? this._waitTx() : {}
+            !(this.dbTransaction) ? this._pushToDb() : {}
     
             // hash: check csv // create hash
             // chain: publish hash on-chain      <--- append task starts here
@@ -104,20 +108,18 @@ class Bundle {
         }
     }
 
-    _noBundles() {
-        return true
+    _processingBundle() {
+        return this.csv ? true : false
     }
 
-    _readWorkDir() {
-        this.csv = ""
-        this.isValidCSV = ""
-        this.bundleID = ""
-        this.ethTransaction = ""
-        this.dbTransaction = ""   
-        // Log You've got bundles that are not finalized
+    _checkBundleID(bundleID) {
+        // is it active? 
+        return bundleID
     }
 
-    _checkCSV() {
+    _checkCSV(csv) {
+        // check csv validity
+        return csv;
     }
 
     _pushToChain() {
@@ -125,14 +127,14 @@ class Bundle {
         DB.publishBundle(bundle)
     }
 
+    _waitTx() {
+        this.ethTx.wait(2)
+    }
+
     _pushToDb() {
         let bundle = new Bundle(csv)
         DB.publishBundle(bundle)
     }
-
-
-    
-
 }
 
 class PoolManager {
