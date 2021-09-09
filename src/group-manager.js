@@ -44,101 +44,128 @@ class Graph {
     // "what is the current base score for the pool address"
 }
 
-class DB {
+class ScoreExplorer {
     constructor(endpoint) {}
     publishBundle(bundle){}
 
 }
 
+class LocalDB {
+    // Moves csv file through the following folders (or similar)
+    // csvs -> signed -> db -> live
+    // if any file is under this procedure, do nothing
+    // score bundles are named using date and user 
+    // proposed name 2021-08-22-meta-game-friends
+    constructor(endpoint) {
+        // endpoint is an object 
+        // if workdir, save to files (also connect with tests this way)
+        // if endpoint and access credentials then attach to DB
+    }
+    save(data) {
+        // save data in the right place depending on fields
+        // if dbTransaction then live
+    }
+
+    getUnprocessedCSV() {
+        // return unprocessed csv
+    }
+}
+
 class Bundle {
-    constructor(initiatedPool, workdir) {
-        this._readWorkDir()
-    }
-    
-    _readWorkDir() {
-        this.csv = "" // only valid csvs come to this point
-        this.bundleID = ""
-        this.ethTx = ""
-        this.dbTransaction = ""   
-        // Log You've got bundles that are not finalized
+    constructor(initiatedPool, localDB, scoreExplorer) {
+        this.initiatedPool = initiatedPool
+        this.localDB = localDB
+        this.scoreExplorer = scoreExplorer
+
+        this.json = this.localDB.getUnprocessedCSV()
     }
 
-    // if workdir is clean new score bundle can be created
+    // if queue is clean new score bundle can be created
     publishNew(csv) {
-        if (!this._processingBundle) {
-            this.csv = _checkCSV(csv)
-
-
-            this.process()
-        } else {
-            console.log("Run process")
-        }
+        // check
+        this._requireCleanQueue()
+        this._requireValidCSV(csv)
+        
+        // process
+        this.csv = csv
+        this.process()
     }
 
-    // if workdir is clean scores can be appended to an existing bundle 
-    // Signed scores pool only
+    // if queue is clean scores can be appended to an existing bundle 
+    // Append is available for signed scores pool only
     append(csv, bundleID) {
-        if (!this._processingBundle) {
-            this.csv = _checkCSV(csv)
-            this.bundleID = _checkBundleID(bundleID)
+        // todo check if this is Signed scores pool
+        this._requireCleanQueue()
+        this._requireValidCSV(csv)
+        this._requireActiveBundleID(bundleID)
 
-
-            this.ethTx = "ok"
-            this.ethTxMined = true
-            this.process()
-        } else {
-            console.log("Run process")
-        }
+        // process
+        this.csv = csv
+        this.bundleID = bundleID
+        this.ethTx = "ok"
+        this.ethTxMined = true
+        this.process()
     }
 
     // if there's an unprocessed bundle, this function should be called
     // new -> ☑️ bundleID -> ☑️ chain -> ☑️ signed -> ☑️ live
     process() {
-        if (this._processingBundle) {
-            
-            !(this.bundleID) ? this.calcBundleId() : {}
-            !(this.ethTx) ? this._pushToChain() : {}
-            !(this.ethTxMined) ? this._waitTx() : {}
-            !(this.dbTransaction) ? this._pushToDb() : {}
-    
-            // hash: check csv // create hash
-            // chain: publish hash on-chain      <--- append task starts here
-            // signed: sign scores with 
-            // live: pushed to db
-        }
+        // check
+        _requireCSV()
+
+        // process
+        !(this.bundleID) ? this._calcBundleId() : {}
+        !(this.ethTx) ? this._pushToChain() : {}
+        !(this.ethTxMined) ? this._waitTx() : {}
+        !(this.dbTransaction) ? this._pushToRemoteDb() : {}
     }
 
-    _processingBundle() {
-        return this.csv ? true : false
+    _requireCSV() {
+        if (!this.csv) { throw "No CSV loaded. Publish or append csv first" }
+        return true
     }
 
-    _checkBundleID(bundleID) {
-        // is it active? 
-        return bundleID
+    _requireCleanQueue() {
+        if (this.csv) { throw "Got CSV processing. Finish processing first" }
+        return true
     }
 
-    _checkCSV(csv) {
-        // check csv validity
-        return csv;
+    _requireValidCSV(csv) {
+        // is csv valid
+        return true
+    }
+
+    _requireActiveBundleID(bundleID) {
+        // is it already onChain? graph
+        return true
+    }
+
+    _calcBundleId() {
+        this.bundleID = "dsf" // hash bundle data to get ID
+        this.localDB.save(this._exportJSON())
     }
 
     _pushToChain() {
-        this.pool.publishBundle(bundle)
-        DB.publishBundle(bundle)
+        // is it already onChain? graph
+        this.ethTx = this.pool.publishBundle(bundle)
+        this.localDB.save(this._exportJSON())
     }
 
     _waitTx() {
         this.ethTx.wait(2)
+        this.ethTxMined = true
+        this.localDB.save(this._exportJSON())
     }
 
-    _pushToDb() {
-        let bundle = new Bundle(csv)
-        DB.publishBundle(bundle)
+    _pushToRemoteDb() {
+        this.dbTransaction = this.scoreExplorer.publishBundle(bundle)
+        this.localDB.save(this._exportJSON())
     }
+
 }
 
-class PoolManager {
-    constructor(wallet, upalaConstants, poolAddress, workdir){
+class Pool {
+    constructor(wallet, upalaConstants, poolAddress, localDB){
         if (poolAddress) {
             this.pool = PoolFactory.attach() 
         }
@@ -165,7 +192,6 @@ class PoolManager {
     }
     setGasPrice(){
     }
-    commit(){}
 
 }
 
