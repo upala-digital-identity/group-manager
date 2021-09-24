@@ -1,22 +1,5 @@
+const upalaConstants = require('upala-constants')
 const ethers = require('ethers');
-const { isReturnStatement } = require('typescript');
-
-const poolFactoryAbi = [
-    "function balanceOf(address) view returns (uint)",
-    "function transfer(address, uint) returns (bool)"
-]
-address = "0x01Ca8A0BA4a80d12A8fb6e3655688f57b16608cf"
-const voidSigner = new ethers.VoidSigner(address, customHttpProvider)
-
-var url = 'http://localhost:8545';
-var customHttpProvider = new ethers.providers.JsonRpcProvider(url);
-customHttpProvider.getBlockNumber().then((result) => {
-    // console.log("Current block number: " + result);
-});
-let wallet = new ethers.Wallet(
-    // address from hardhat for now 
-    "0xdf57089febbacf7ba0bc227dafbffa9fc08a93fdc68e1e42411a14efcf23656e", 
-    customHttpProvider);
 
 // Interacting with smart contracts
 class PoolFactory {
@@ -27,7 +10,7 @@ class PoolFactory {
         this.pool; // hm.. smart contract should be available here
       }
     
-    deploy() { 
+    deployPool() { 
         // return initialized pool contract
     }
 
@@ -66,19 +49,88 @@ class LocalDB {
         // if dbTransaction then live
     }
 
-    getUnprocessedCSV() {
+    getUnprocessedSubBundle() {
         // return unprocessed csv
+        return false
     }
 }
 
-class Bundle {
-    constructor(initiatedPool, localDB, scoreExplorer) {
-        this.initiatedPool = initiatedPool
-        this.localDB = localDB
-        this.scoreExplorer = scoreExplorer
+class PoolManager {
+    // args: 
+    // wallet 
+    // upalaConstants
+    // localDbEndpoint
+    // scoreExplorerEndpoint
+    // overrideAddresses
 
-        this.json = this.localDB.getUnprocessedCSV()
+    constructor(args) {
+        // DBs
+        this.localDB = new LocalDB(args.localDbEndpoint)
+        this.scoreExplorer = new ScoreExplorer(args.scoreExplorerEndpoint)
+
+        // State
+        this.subBundle = this.localDB.getUnprocessedSubBundle()
+        
+        // Wallet
+        this.wallet = args.wallet
+
+        // Overrides
+        this.addresses = args.overrideAddresses
+
     }
+
+    /*********
+    INITIALIZE
+    **********/
+
+    async initializeUpalaContracts(poolType) {
+        if (!this.abis) {
+            this.abis = upalaConstants.getAbis()
+        }
+        if (!this.addresses) {
+            this.addresses = upalaConstants.getAddresses({chainID: await this.wallet.getChainId()})
+        }
+        if (!this.upala) {
+            this.upala = new ethers.Contract(
+                this.addresses.Upala,
+                this.abis.Upala, 
+                this.wallet)
+        }
+        if (!this.poolFactoryTemp) {
+            let poolFactoryType = poolType + 'Factory'
+            this.poolFactoryTemp = new ethers.Contract(
+                this.addresses[poolFactoryType], 
+                this.abis[poolFactoryType], 
+                this.wallet)
+        }
+    }
+
+    async attachToPool(poolType, poolAddress) {
+        // todo require notDeployed
+        await this.initializeUpalaContracts(poolType)
+        const poolContract = new ethers.Contract(
+            poolAddress, 
+            this.abis[poolType], 
+            this.wallet)
+        this.pool = poolContract
+        return poolContract
+    }
+
+    async deployPool(poolType) {
+        await this.initializeUpalaContracts(poolType)
+        // todo require notDeployed
+
+        const tx = await this.poolFactoryTemp.connect(this.wallet).createPool()
+        const blockNumber = (await tx.wait(1)).blockNumber
+        const eventFilter = this.upala.filters.NewPool();
+        const events = await this.upala.queryFilter(eventFilter, blockNumber, blockNumber);
+        const newPoolAddress = events[0].args.poolAddress
+        return this.attachToPool(poolType, newPoolAddress)
+    }
+
+    /*************
+    MANAGE BUNDLES
+    *************/
 
     // if queue is clean new score bundle can be created
     publishNew(csv) {
@@ -87,7 +139,7 @@ class Bundle {
         this._requireValidCSV(csv)
         
         // process
-        this.csv = csv
+        this.subBundle.csv = csv
         this.process()
     }
 
@@ -100,10 +152,10 @@ class Bundle {
         this._requireActiveBundleID(bundleID)
 
         // process
-        this.csv = csv
-        this.bundleID = bundleID
-        this.ethTx = "ok"
-        this.ethTxMined = true
+        this.subBundle.csv = csv
+        this.subBundle.bundleID = bundleID
+        this.subBundle.ethTx = "ok"
+        this.subBundle.ethTxMined = true
         this.process()
     }
 
@@ -114,19 +166,20 @@ class Bundle {
         _requireCSV()
 
         // process
-        !(this.bundleID) ? this._calcBundleId() : {}
-        !(this.ethTx) ? this._pushToChain() : {}
-        !(this.ethTxMined) ? this._waitTx() : {}
-        !(this.dbTransaction) ? this._pushToRemoteDb() : {}
+        !(this.subBundle.bundleID) ? this._assignBundleId() : {}
+        !(this.subBundle.subBundleID) ? this._assignSubBundleId() : {}
+        !(this.subBundle.ethTx) ? this._pushToChain() : {}
+        !(this.subBundle.ethTxMined) ? this._waitTx() : {}
+        !(this.subBundle.dbTransaction) ? this._pushToRemoteDb() : {}
     }
 
     _requireCSV() {
-        if (!this.csv) { throw "No CSV loaded. Publish or append csv first" }
+        if (!this.subBundle.csv) { throw "No CSV loaded. Publish or append csv first" }
         return true
     }
 
     _requireCleanQueue() {
-        if (this.csv) { throw "Got CSV processing. Finish processing first" }
+        if (this.subBundle.csv) { throw "Got CSV processing. Finish processing first" }
         return true
     }
 
@@ -140,52 +193,39 @@ class Bundle {
         return true
     }
 
-    _calcBundleId() {
-        this.bundleID = "dsf" // hash bundle data to get ID
-        this.localDB.save(this._exportJSON())
+    _assignBundleId() {
+        this.subBundle.bundleID = "dsf" // hash bundle data to get ID
+        this.localDB.newBundleID(this.subBundle.bundleID)
+    }
+
+    // as Signed Scores Pool may have multiple subBundles within single bundle
+    // every subBundle is assigned a uniqe ID. Calculated the same way as 
+    // Bundle ID. The first subBundleID equals its Bundle ID
+    _assignSubBundleId() {
+        this.subBundle.subBundleID = "dsf" // hash bundle data to get ID
+        this.localDB.newSubBundleID(this.subBundle.bundleID, this.subBundle.subBundleID)
     }
 
     _pushToChain() {
         // is it already onChain? graph
-        this.ethTx = this.pool.publishBundle(bundle)
-        this.localDB.save(this._exportJSON())
+        this.subBundle.ethTx = this.pool.publishBundle(bundle)
+        this.localDB.txSent()
     }
 
     _waitTx() {
-        this.ethTx.wait(2)
-        this.ethTxMined = true
-        this.localDB.save(this._exportJSON())
+        this.subBundle.ethTx.wait(2)
+        this.subBundle.ethTxMined = true
+        this.localDB.txMined()
     }
 
     _pushToRemoteDb() {
-        this.dbTransaction = this.scoreExplorer.publishBundle(bundle)
-        this.localDB.save(this._exportJSON())
+        this.subBundle.dbTransaction = this.scoreExplorer.publishBundle(bundle)
+        this.localDB.isLive()
     }
 
-}
-
-class Pool {
-    constructor(wallet, upalaConstants, poolAddress, localDB){
-        if (poolAddress) {
-            this.pool = PoolFactory.attach() 
-        }
-    }
-
-    deploy() {
-        this.pool = PoolFactory.deploy()
-    }
-
-    publishBundle(csv) {
-        Bundle.newBundle()
-    }
-    appendToBundle(csv, existingBundleID) {
-        Bundle.append(csv, existingBundleID)
-    }
-    // if something went wrong during prevoius task
-    finalizeBundle() {
-        Bundle.finalize()
-    }
-
+    /***********
+    MANAGE OTHER
+    ************/
 
     // Contract functions
     setBaseScore(newScore) {
@@ -195,23 +235,25 @@ class Pool {
 
 }
 
-// bind to existing group
-exports.attachToGroup = async function(poolContractAddress) {
-    contract = new ethers.Contract(poolContractAddress, poolFactoryAbi, voidSigner)
-    return contract
-}
-
-// or create new group
-exports.createGroup = async function(arguments) {
+async function main() {
     
-    someContractAddress = "0x8ba1f109551bD432803012645Ac136ddd64DBA72";
-    contract = new ethers.Contract(someContractAddress, poolFactoryAbi, voidSigner)
+    const provider = new ethers.providers.JsonRpcProvider('http://localhost:8545')
+    const mnemonic = "test test test test test test test test test test test junk"
+    const poolManagerWallet = ethers.Wallet.fromMnemonic(mnemonic).connect(provider)
+    
+    const poolManager = new PoolManager({
+        wallet: poolManagerWallet
+      })
+    const poolContract = await poolManager.deployPool('SignedScoresPool')
 
-    // initialize contract
-    actualContractAddress = "0x2546bcd3c84621e976d8185a91a922ae77ecec30 ";
-    contract.connect(wallet);
-    // contract.attach(actualContractAddress);
-    console.log(await wallet.getBalance());
-    console.log("sdf");
-};
+    console.log('approvedToken:', await poolContract.approvedToken())
+  }
+  
+main()
+    .then(() => process.exit(0))
+    .catch((error) => {
+        console.error(error)
+        process.exit(1)
+    })
 
+module.exports = PoolManager

@@ -46,6 +46,8 @@
     "prepublishOnly": "yarn test"
   },
   "dependencies": {
+    "ethereumjs-abi": "^0.6.8",
+    "ethers": "^5.4.7",
     "inquirer": "^8.1.2"
   }
 }
