@@ -1,24 +1,6 @@
 const upalaConstants = require('upala-constants')
 const ethers = require('ethers');
 
-// Interacting with smart contracts
-class PoolFactory {
-    constructor(wallet, upalaConstants) {
-        this.wallet = wallet;
-        this.upalaConstants = upalaConstants;
-        this.gasPrice = "";
-        this.pool; // hm.. smart contract should be available here
-      }
-    
-    deployPool() { 
-        // return initialized pool contract
-    }
-
-    attach(address) {
-        // return initialised pool contract
-    }
-}
-
 class Graph {
     constructor(endpoint) {
         this.endpoint = endpoint;
@@ -106,20 +88,21 @@ class PoolManager {
     }
 
     async attachToPool(poolType, poolAddress) {
-        // todo require notDeployed
-        await this.initializeUpalaContracts(poolType)
-        const poolContract = new ethers.Contract(
+        if (this.pool) {
+            return this.pool
+        } else {
+            await this.initializeUpalaContracts(poolType)
+            const poolContract = new ethers.Contract(
             poolAddress, 
             this.abis[poolType], 
             this.wallet)
-        this.pool = poolContract
-        return poolContract
+            this.pool = poolContract
+            return poolContract
+        }
     }
 
     async deployPool(poolType) {
         await this.initializeUpalaContracts(poolType)
-        // todo require notDeployed
-
         const tx = await this.poolFactoryTemp.connect(this.wallet).createPool()
         const blockNumber = (await tx.wait(1)).blockNumber
         const eventFilter = this.upala.filters.NewPool();
@@ -244,8 +227,9 @@ async function main() {
     const poolManager = new PoolManager({
         wallet: poolManagerWallet
       })
-    const poolContract = await poolManager.deployPool('SignedScoresPool')
-
+    // const poolContract = await poolManager.deployPool('SignedScoresPool')
+    const poolContract = await poolManager.attachToPool('SignedScoresPool', '0x9b438758098003c07320542c129dFEecb04cf3E2')
+    console.log('pool address:', poolContract.address)    
     console.log('approvedToken:', await poolContract.approvedToken())
   }
   
