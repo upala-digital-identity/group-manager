@@ -17,7 +17,7 @@ class ScoreExplorer {
 
 class LocalDB {
     // Moves csv file through the following folders (or similar)
-    // csvs -> signed -> db -> live
+    // csvs -> unprocessed (valid_csv, receipt) -> live
     // if any file is under this procedure, do nothing
     // score bundles are named using date and user 
     // proposed name 2021-08-22-meta-game-friends
@@ -26,14 +26,25 @@ class LocalDB {
         // if workdir, save to files (also connect with tests this way)
         // if endpoint and access credentials then attach to DB
     }
-    save(data) {
-        // save data in the right place depending on fields
-        // if dbTransaction then live
+
+    updateSubBundle(subBundle) {
+        // if !dbTransaction then live
+        // save both csv and receipt to unprocessed folder
+        // if dbTransaction
+        // save 
+        return subBundle
     }
 
     getUnprocessedSubBundle() {
-        // return unprocessed csv
-        return false
+        // if dbTransaction then live
+        if (!subBundle.dbTransaction) {
+            // return unprocessed csv
+        }
+        return {}
+    }
+
+    getActiveBundlesList(){
+
     }
 }
 
@@ -112,7 +123,7 @@ class PoolManager {
     }
 
     /*************
-    MANAGE BUNDLES
+    MANAGE SCORES
     *************/
 
     // if queue is clean new score bundle can be created
@@ -149,12 +160,46 @@ class PoolManager {
         _requireCSV()
 
         // process
-        !(this.subBundle.bundleID) ? this._assignBundleId() : {}
-        !(this.subBundle.subBundleID) ? this._assignSubBundleId() : {}
-        !(this.subBundle.ethTx) ? this._pushToChain() : {}
-        !(this.subBundle.ethTxMined) ? this._waitTx() : {}
-        !(this.subBundle.dbTransaction) ? this._pushToRemoteDb() : {}
+        try {
+            !(this.subBundle.bundleID) ? this._assignBundleId() : {}
+            !(this.subBundle.subBundleID) ? this._assignSubBundleId() : {}
+            !(this.subBundle.ethTx) ? this._pushToChain() : {}
+            !(this.subBundle.ethTxMined) ? this._waitTx() : {}
+            !(this.subBundle.dbTransaction) ? this._pushToRemoteDb() : {}
+        } catch ( error ) {
+            throw( error );
+        } finally {
+            this.localDB.updateSubBundle(this.subBundle)
+        }
     }
+
+    getActiveBundlesList() {
+        return this.localDB.getActiveBundlesList()
+    }
+
+    async deleteScoreBundleId(scoreBundleId) {
+        this.pool.deleteScoreBundleId(scoreBundleId)
+    }
+
+    getBaseScore() {
+        return this.pool.baseScore()
+    }
+
+    setBaseScore(newScore) {
+        this.pool.setBaseScore(newScore)
+    }
+
+    /***********
+    MANAGE OTHER
+    ************/
+
+    // withdrawFromPool(address recipient, uint256 amount) 
+    
+    // updateMetadata(string calldata newMetadata)
+
+    /*******
+    INTERNAL
+    ********/    
 
     _requireCSV() {
         if (!this.subBundle.csv) { throw "No CSV loaded. Publish or append csv first" }
@@ -178,7 +223,6 @@ class PoolManager {
 
     _assignBundleId() {
         this.subBundle.bundleID = "dsf" // hash bundle data to get ID
-        this.localDB.newBundleID(this.subBundle.bundleID)
     }
 
     // as Signed Scores Pool may have multiple subBundles within single bundle
@@ -186,36 +230,21 @@ class PoolManager {
     // Bundle ID. The first subBundleID equals its Bundle ID
     _assignSubBundleId() {
         this.subBundle.subBundleID = "dsf" // hash bundle data to get ID
-        this.localDB.newSubBundleID(this.subBundle.bundleID, this.subBundle.subBundleID)
     }
 
     _pushToChain() {
         // is it already onChain? graph
         this.subBundle.ethTx = this.pool.publishBundle(bundle)
-        this.localDB.txSent()
     }
 
     _waitTx() {
         this.subBundle.ethTx.wait(2)
         this.subBundle.ethTxMined = true
-        this.localDB.txMined()
     }
 
     _pushToRemoteDb() {
         this.subBundle.dbTransaction = this.scoreExplorer.publishBundle(bundle)
-        this.localDB.isLive()
     }
-
-    /***********
-    MANAGE OTHER
-    ************/
-
-    // Contract functions
-    setBaseScore(newScore) {
-    }
-    setGasPrice(){
-    }
-
 }
 
 async function main() {
