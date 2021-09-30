@@ -1,6 +1,7 @@
 const upalaConstants = require('upala-constants')
-const ethers = require('ethers');
-
+const ethers = require('ethers')
+const path = require('path')
+const fs = require('fs')
 class Graph {
     constructor(endpoint) {
         this.endpoint = endpoint;
@@ -22,29 +23,47 @@ class LocalDB {
     // score bundles are named using date and user 
     // proposed name 2021-08-22-meta-game-friends
     constructor(endpoint) {
-        // endpoint is an object 
         // if workdir, save to files (also connect with tests this way)
-        // if endpoint and access credentials then attach to DB
+        if (endpoint.workdir) {
+
+            this.workdir = endpoint.workdir
+
+            // check write permissions 
+            fs.accessSync(path, fs.constants.W_OK);
+
+            // define paths
+            this.unprocessedDir = path.join(this.workdir, "unprocessed")
+            this.liveDir = path.join(this.workdir, "live")
+
+            // create folders if needed
+            if (!fs.existsSync(dir)){
+                fs.mkdirSync(dir);
+            }
+        }
     }
 
     updateSubBundle(subBundle) {
-        // if !dbTransaction then live
-        // save both csv and receipt to unprocessed folder
-        // if dbTransaction
-        // save 
-        return subBundle
+        const fileName = subBundle.subBundleID + ".json"
+        if (subBundle.dbTransaction) {
+            const live = path.join(this.liveDir, subBundle.bundleID, fileName)
+            fs.writeFileSync(live, JSON.stringify(subBundle, null, 2))
+        } else {
+            const unprocessed = path.join(this.unprocessedDir, fileName)
+            fs.writeFileSync(unprocessed, JSON.stringify(subBundle, null, 2))
+        }
     }
 
     getUnprocessedSubBundle() {
-        // if dbTransaction then live
-        if (!subBundle.dbTransaction) {
-            // return unprocessed csv
+        const unprocessed = fs.readdirSync(testFolder)
+        if (unprocessed) {
+            return JSON.parse(fs.readFileSync(unprocessed[0]))
         }
-        return {}
     }
 
     getActiveBundlesList(){
-
+        return fs.readdirSync(this.liveDir).filter(function (file) {
+            return fs.statSync(this.liveDir+'/'+file).isDirectory();
+        });
     }
 }
 
@@ -199,7 +218,7 @@ class PoolManager {
 
     /*******
     INTERNAL
-    ********/    
+    ********/
 
     _requireCSV() {
         if (!this.subBundle.csv) { throw "No CSV loaded. Publish or append csv first" }
