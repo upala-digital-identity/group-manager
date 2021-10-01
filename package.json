@@ -48,6 +48,7 @@
   "dependencies": {
     "ethereumjs-abi": "^0.6.8",
     "ethers": "^5.4.7",
-    "inquirer": "^8.1.2"
+    "inquirer": "^8.1.2",
+    "keccak256": "^1.0.3"
   }
 }

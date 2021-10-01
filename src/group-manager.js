@@ -2,6 +2,14 @@ const upalaConstants = require('upala-constants')
 const ethers = require('ethers')
 const path = require('path')
 const fs = require('fs')
+const keccak256 = require('keccak256')
+
+// TODO
+// hashing, signing - do it first to finish the whole package prototype 
+// decide on ethereum interaction (a function that get a tx and reports to user)
+// decide on error handling 
+// 
+
 class Graph {
     constructor(endpoint) {
         this.endpoint = endpoint;
@@ -28,16 +36,20 @@ class LocalDB {
 
             this.workdir = endpoint.workdir
 
-            // check write permissions 
-            fs.accessSync(path, fs.constants.W_OK);
-
             // define paths
             this.unprocessedDir = path.join(this.workdir, "unprocessed")
             this.liveDir = path.join(this.workdir, "live")
 
-            // create folders if needed
-            if (!fs.existsSync(dir)){
-                fs.mkdirSync(dir);
+            try {
+                // check write permissions 
+                fs.accessSync(path, fs.constants.W_OK);
+
+                // create folders if needed
+                if (!fs.existsSync(dir)){
+                    fs.mkdirSync(dir);
+                }
+            } catch (error) {
+                // todo callback message 
             }
         }
     }
@@ -45,6 +57,7 @@ class LocalDB {
     updateSubBundle(subBundle) {
         const fileName = subBundle.subBundleID + ".json"
         if (subBundle.dbTransaction) {
+            // todo add date to filename (the first subBundle will bear ethereum tx id)
             const live = path.join(this.liveDir, subBundle.bundleID, fileName)
             fs.writeFileSync(live, JSON.stringify(subBundle, null, 2))
         } else {
@@ -88,6 +101,8 @@ class PoolManager {
 
         // Overrides
         this.addresses = args.overrideAddresses
+
+        this.userMessageCallback = args.userMessageCallback
 
     }
 
@@ -167,7 +182,7 @@ class PoolManager {
         // process
         this.subBundle.csv = csv
         this.subBundle.bundleID = bundleID
-        this.subBundle.ethTx = "ok"
+        this.subBundle.ethTx = "not needed" // any text to skip tx step when processing
         this.subBundle.ethTxMined = true
         this.process()
     }
@@ -197,14 +212,18 @@ class PoolManager {
     }
 
     async deleteScoreBundleId(scoreBundleId) {
-        this.pool.deleteScoreBundleId(scoreBundleId)
+        const tx = await this.pool.deleteScoreBundleId(scoreBundleId)
+        this.userMessageCallback({message: tx})
+        const mined = tx.wait()
+        this.userMessageCallback({message: tx})
     }
 
-    getBaseScore() {
-        return this.pool.baseScore()
+    async getBaseScore() {
+        return await this.pool.baseScore()
     }
 
-    setBaseScore(newScore) {
+    async setBaseScore(newScore) {
+        // todo same logic as with deleteScoreBundleId
         this.pool.setBaseScore(newScore)
     }
 
@@ -212,16 +231,24 @@ class PoolManager {
     MANAGE OTHER
     ************/
 
-    // withdrawFromPool(address recipient, uint256 amount) 
-    
-    // updateMetadata(string calldata newMetadata)
+    async withdrawFromPool(recipient, amount) {
+        // todo same logic as with deleteScoreBundleId
+        this.pool.withdrawFromPool(recipient, amount)
+    }
+
+    async updateMetadata(newMetadata) {
+        // todo same logic as with deleteScoreBundleId
+        this.pool.updateMetadata(newMetadata)
+    }
 
     /*******
     INTERNAL
     ********/
 
     _requireCSV() {
-        if (!this.subBundle.csv) { throw "No CSV loaded. Publish or append csv first" }
+        if (!this.subBundle.csv) {
+            // todo decide on error handling model
+            throw "No CSV loaded. Publish or append csv first" }
         return true
     }
 
@@ -248,7 +275,12 @@ class PoolManager {
     // every subBundle is assigned a uniqe ID. Calculated the same way as 
     // Bundle ID. The first subBundleID equals its Bundle ID
     _assignSubBundleId() {
+        // https://docs.ethers.io/v5/api/utils/hashing/#utils--solidity-hashing
         this.subBundle.subBundleID = "dsf" // hash bundle data to get ID
+    }
+
+    _hash(){
+        keccak256('hello').toString('hex')
     }
 
     _pushToChain() {
@@ -257,7 +289,7 @@ class PoolManager {
     }
 
     _waitTx() {
-        this.subBundle.ethTx.wait(2)
+        this.subBundle.ethTx.wait(1)
         this.subBundle.ethTxMined = true
     }
 
