@@ -2,12 +2,13 @@ const upalaConstants = require('upala-constants')
 const ethers = require('ethers')
 const path = require('path')
 const fs = require('fs')
-const keccak256 = require('keccak256')
+const objectHash = require('object-hash')
 
 // TODO
+// different folders for different pools for local db
+// decide on what is being saved locally and what sent to remote db (current csv thing is not good)
 // hashing, signing - do it first to finish the whole package prototype 
 // decide on ethereum interaction (a function that get a tx and reports to user)
-// decide on error handling 
 // 
 
 class Graph {
@@ -40,16 +41,12 @@ class LocalDB {
             this.unprocessedDir = path.join(this.workdir, "unprocessed")
             this.liveDir = path.join(this.workdir, "live")
 
-            try {
-                // check write permissions 
-                fs.accessSync(path, fs.constants.W_OK);
+            // check write permissions 
+            fs.accessSync(path, fs.constants.W_OK);
 
-                // create folders if needed
-                if (!fs.existsSync(dir)){
-                    fs.mkdirSync(dir);
-                }
-            } catch (error) {
-                // todo callback message 
+            // create folders if needed
+            if (!fs.existsSync(dir)){
+                fs.mkdirSync(dir);
             }
         }
     }
@@ -164,7 +161,6 @@ class PoolManager {
     publishNew(csv) {
         // check
         this._requireCleanQueue()
-        this._requireValidCSV(csv)
         
         // process
         this.subBundle.csv = csv
@@ -176,13 +172,12 @@ class PoolManager {
     append(csv, bundleID) {
         // todo check if this is Signed scores pool
         this._requireCleanQueue()
-        this._requireValidCSV(csv)
         this._requireActiveBundleID(bundleID)
 
         // process
         this.subBundle.csv = csv
         this.subBundle.bundleID = bundleID
-        this.subBundle.ethTx = "not needed" // any text to skip tx step when processing
+        this.subBundle.ethTx = "see the first subBundle" // any text to skip tx step when processing
         this.subBundle.ethTxMined = true
         this.process()
     }
@@ -193,10 +188,19 @@ class PoolManager {
         // check
         _requireCSV()
 
+        // as Signed Scores Pool may have multiple subBundles within single bundle
+        // every subBundle is assigned a uniqe ID. Calculated the same way as 
+        // Bundle ID. The first subBundleID equals its Bundle ID
+        this.subBundle.subBundleID = objectHash(this.subBundle.csv, { algorithm: 'md5' })
+        if (!this.subBundle.bundleID) {
+            this.subBundle.bundleID = this.subBundle.subBundleID
+        }
+
         // process
         try {
-            !(this.subBundle.bundleID) ? this._assignBundleId() : {}
-            !(this.subBundle.subBundleID) ? this._assignSubBundleId() : {}
+            !(this.subBundle.subBundleID) ? //todo
+            
+            this._signCSVs() : {}
             !(this.subBundle.ethTx) ? this._pushToChain() : {}
             !(this.subBundle.ethTxMined) ? this._waitTx() : {}
             !(this.subBundle.dbTransaction) ? this._pushToRemoteDb() : {}
@@ -246,19 +250,14 @@ class PoolManager {
     ********/
 
     _requireCSV() {
-        if (!this.subBundle.csv) {
-            // todo decide on error handling model
-            throw "No CSV loaded. Publish or append csv first" }
+        if (this.subBundle.csv) {
+            throw new Error("No CSV loaded. Publish or append csv first") }
         return true
     }
 
     _requireCleanQueue() {
-        if (this.subBundle.csv) { throw "Got CSV processing. Finish processing first" }
-        return true
-    }
-
-    _requireValidCSV(csv) {
-        // is csv valid
+        if (!this.subBundle.csv) { 
+            throw new Error("Got CSV processing. Finish processing first") }
         return true
     }
 
@@ -267,21 +266,31 @@ class PoolManager {
         return true
     }
 
-    _assignBundleId() {
-        this.subBundle.bundleID = "dsf" // hash bundle data to get ID
+
+
+
+    _sign() {
+        // sign individual scores
+        for (const user of this.subBundle.csv) {
+            user.signature = utils.solidityKeccak256(
+                [ "address", "uint8", "bytes32" ], 
+                [user.address, user.score, this.subBundle.bundleID])
+        }
+        // sign the whole bundle 
+        // (score explorer will use this signature for auth)
+        objectHash(
+            {
+                poolAddress: this.pool.address,
+                poolManagerAddress: this.wallet.address,
+                scoreBundleId: this.subBundle.bundleID,
+                scoreSubBundleId: this.subBundle.subBundleID,
+                claims: this.subBundle.csv
+            }, 
+            { algorithm: 'md5' })
     }
 
-    // as Signed Scores Pool may have multiple subBundles within single bundle
-    // every subBundle is assigned a uniqe ID. Calculated the same way as 
-    // Bundle ID. The first subBundleID equals its Bundle ID
-    _assignSubBundleId() {
-        // https://docs.ethers.io/v5/api/utils/hashing/#utils--solidity-hashing
-        this.subBundle.subBundleID = "dsf" // hash bundle data to get ID
-    }
 
-    _hash(){
-        keccak256('hello').toString('hex')
-    }
+
 
     _pushToChain() {
         // is it already onChain? graph
