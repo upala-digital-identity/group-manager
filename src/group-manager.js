@@ -269,12 +269,14 @@ class PoolManager {
 
 
 
-    _sign() {
+    async _sign() {
         // sign individual scores
+        // the signatures will be used by smart contract to prove user score
         for (const user of this.subBundle.csv) {
-            user.signature = utils.solidityKeccak256(
+            const message = utils.solidityKeccak256(
                 [ "address", "uint8", "bytes32" ], 
                 [user.address, user.score, this.subBundle.bundleID])
+            user.signature = await this.wallet.signMessage(message)
         }
         // sign the whole bundle 
         // (score explorer will use this signature for auth)
