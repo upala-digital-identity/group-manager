@@ -6,7 +6,7 @@ const objectHash = require('object-hash')
 
 // TODO
 // different folders for different pools for local db
-// decide on what is being saved locally and what sent to remote db (current csv thing is not good)
+// decide on what is being saved locally and what sent to remote db (current users thing is not good)
 // hashing, signing - do it first to finish the whole package prototype 
 // decide on ethereum interaction (a function that get a tx and reports to user)
 // 
@@ -26,8 +26,8 @@ class ScoreExplorer {
 }
 
 class LocalDB {
-    // Moves csv file through the following folders (or similar)
-    // csvs -> unprocessed (valid_csv, receipt) -> live
+    // Moves users file through the following folders (or similar)
+    // userss -> unprocessed (valid_users, receipt) -> live
     // if any file is under this procedure, do nothing
     // score bundles are named using date and user 
     // proposed name 2021-08-22-meta-game-friends
@@ -78,29 +78,43 @@ class LocalDB {
 }
 
 class PoolManager {
-    // args: 
-    // wallet 
-    // upalaConstants
-    // localDbEndpoint
-    // scoreExplorerEndpoint
-    // overrideAddresses
+
+    // PROPERTIES
+
+    // localDB
+    // scoreExplorer
+    // wallet - todo require pool as argument instaed, get wallet from pool
+    // addresses
+    // userMessageCallback
+    // pool - initialized pool contract // todo remove deploy/atach logic from class 
+    // subBundle
+    //      ethTx
+    //      ethTxMined
+    //      dbTransaction
+    //      public // the below goes to score Explorer
+    //          bundleId
+    //          subBundleId
+    //          poolAddress
+    //          poolManagerAddress
+    //          users
+    //          signature - signature of the whole public data
 
     constructor(args) {
+
+        // ARGS //
+
         // DBs
         this.localDB = new LocalDB(args.localDbEndpoint)
         this.scoreExplorer = new ScoreExplorer(args.scoreExplorerEndpoint)
-
-        // State
-        this.subBundle = this.localDB.getUnprocessedSubBundle()
-        
         // Wallet
         this.wallet = args.wallet
-
         // Overrides
         this.addresses = args.overrideAddresses
-
+        // Callback
         this.userMessageCallback = args.userMessageCallback
 
+        // INIT //
+        this.subBundle = this.localDB.getUnprocessedSubBundle()
     }
 
     /*********
@@ -158,25 +172,25 @@ class PoolManager {
     *************/
 
     // if queue is clean new score bundle can be created
-    publishNew(csv) {
+    publishNew(users) {
         // check
         this._requireCleanQueue()
         
         // process
-        this.subBundle.csv = csv
+        this.subBundle.public.users = users
         this.process()
     }
 
     // if queue is clean scores can be appended to an existing bundle 
     // Append is available for signed scores pool only
-    append(csv, bundleID) {
+    append(users, bundleID) {
         // todo check if this is Signed scores pool
         this._requireCleanQueue()
         this._requireActiveBundleID(bundleID)
 
         // process
-        this.subBundle.csv = csv
-        this.subBundle.bundleID = bundleID
+        this.subBundle.public.users = users
+        this.subBundle.public.bundleID = bundleID
         this.subBundle.ethTx = "see the first subBundle" // any text to skip tx step when processing
         this.subBundle.ethTxMined = true
         this.process()
@@ -186,21 +200,21 @@ class PoolManager {
     // new -> ☑️ bundleID -> ☑️ chain -> ☑️ signed -> ☑️ live
     process() {
         // check
-        _requireCSV()
+        _requireUsers()
 
         // as Signed Scores Pool may have multiple subBundles within single bundle
         // every subBundle is assigned a uniqe ID. Calculated the same way as 
         // Bundle ID. The first subBundleID equals its Bundle ID
-        this.subBundle.subBundleID = objectHash(this.subBundle.csv, { algorithm: 'md5' })
-        if (!this.subBundle.bundleID) {
-            this.subBundle.bundleID = this.subBundle.subBundleID
+        this.subBundle.public.subBundleID = objectHash(this.subBundle.public.users, { algorithm: 'md5' })
+        if (!this.subBundle.public.bundleID) {
+            this.subBundle.public.bundleID = this.subBundle.public.subBundleID
         }
+        !(this.subBundle.public.subBundleID) ? //todo
+            
+        this._signUsers() : {}
 
         // process
         try {
-            !(this.subBundle.subBundleID) ? //todo
-            
-            this._signCSVs() : {}
             !(this.subBundle.ethTx) ? this._pushToChain() : {}
             !(this.subBundle.ethTxMined) ? this._waitTx() : {}
             !(this.subBundle.dbTransaction) ? this._pushToRemoteDb() : {}
@@ -249,15 +263,15 @@ class PoolManager {
     INTERNAL
     ********/
 
-    _requireCSV() {
-        if (this.subBundle.csv) {
-            throw new Error("No CSV loaded. Publish or append csv first") }
+    _requireUsers() {
+        if (this.subBundle.public.users) {
+            throw new Error("No users loaded. Publish or append users first") }
         return true
     }
 
     _requireCleanQueue() {
-        if (!this.subBundle.csv) { 
-            throw new Error("Got CSV processing. Finish processing first") }
+        if (!this.subBundle.public.users) { 
+            throw new Error("Got users processing. Finish processing first") }
         return true
     }
 
@@ -272,22 +286,19 @@ class PoolManager {
     async _sign() {
         // sign individual scores
         // the signatures will be used by smart contract to prove user score
-        for (const user of this.subBundle.csv) {
+        for (const user of this.subBundle.public.users) {
             const message = utils.solidityKeccak256(
                 [ "address", "uint8", "bytes32" ], 
-                [user.address, user.score, this.subBundle.bundleID])
+                [user.address, user.score, this.subBundle.public.bundleID])
             user.signature = await this.wallet.signMessage(message)
         }
-        // sign the whole bundle 
+
+        // create public, sign the whole bundle 
         // (score explorer will use this signature for auth)
-        objectHash(
-            {
-                poolAddress: this.pool.address,
-                poolManagerAddress: this.wallet.address,
-                scoreBundleId: this.subBundle.bundleID,
-                scoreSubBundleId: this.subBundle.subBundleID,
-                claims: this.subBundle.csv
-            }, 
+        this.subBundle.public.poolAddress = this.pool.address
+        this.subBundle.public.poolManagerAddress = this.wallet.address
+        this.subBundle.public.signature = objectHash(
+            this.subBundle.public, 
             { algorithm: 'md5' })
     }
 
