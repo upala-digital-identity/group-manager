@@ -2,14 +2,46 @@ const upalaConstants = require('upala-constants')
 const ethers = require('ethers')
 const path = require('path')
 const fs = require('fs')
-const objectHash = require('object-hash')
+const _objectHash = require('object-hash')
 
 // TODO
+// move pool creation/attachement out of PoolManager class
 // different folders for different pools for local db
-// decide on what is being saved locally and what sent to remote db (current users thing is not good)
-// hashing, signing - do it first to finish the whole package prototype 
 // decide on ethereum interaction (a function that get a tx and reports to user)
 // 
+
+/*********
+INITIALIZE
+**********/
+
+async function deployPool(poolType, wallet) { // todo override addresses
+    const addresses = upalaConstants.getAddresses({chainID: await wallet.getChainId()})
+    const poolFactoryType = poolType + 'Factory'
+    const poolFactoryTemp = new ethers.Contract(
+        addresses[poolFactoryType], 
+        upalaConstants.getAbis()[poolFactoryType], 
+        wallet)
+
+    const tx = await poolFactoryTemp.connect(wallet).createPool()
+    const blockNumber = (await tx.wait(1)).blockNumber
+    
+    const upala = new ethers.Contract(
+        addresses.Upala,
+        upalaConstants.getAbis().Upala, 
+        wallet)
+    const eventFilter = upala.filters.NewPool();
+    const events = await upala.queryFilter(eventFilter, blockNumber, blockNumber);
+    const newPoolAddress = events[0].args.poolAddress
+    return attachToPool(poolType, newPoolAddress, wallet)
+}
+
+async function attachToPool(poolType, poolAddress, wallet) {
+    const poolContract = new ethers.Contract(
+        poolAddress, 
+        upalaConstants.getAbis()[poolType], 
+        wallet)
+    return poolContract
+}
 
 class Graph {
     constructor(endpoint) {
@@ -91,12 +123,13 @@ class PoolManager {
     //      ethTx
     //      ethTxMined
     //      dbTransaction
-    //      public // the below goes to score Explorer
+    //      users // input users and their scores (deleted after signing)
+    //      public // the below goes to score Explorer // transaction, record
     //          bundleId
     //          subBundleId
     //          poolAddress
     //          poolManagerAddress
-    //          users
+    //          signedUsers
     //          signature - signature of the whole public data
 
     constructor(args) {
@@ -117,67 +150,18 @@ class PoolManager {
         this.subBundle = this.localDB.getUnprocessedSubBundle()
     }
 
-    /*********
-    INITIALIZE
-    **********/
-
-    async initializeUpalaContracts(poolType) {
-        if (!this.abis) {
-            this.abis = upalaConstants.getAbis()
-        }
-        if (!this.addresses) {
-            this.addresses = upalaConstants.getAddresses({chainID: await this.wallet.getChainId()})
-        }
-        if (!this.upala) {
-            this.upala = new ethers.Contract(
-                this.addresses.Upala,
-                this.abis.Upala, 
-                this.wallet)
-        }
-        if (!this.poolFactoryTemp) {
-            let poolFactoryType = poolType + 'Factory'
-            this.poolFactoryTemp = new ethers.Contract(
-                this.addresses[poolFactoryType], 
-                this.abis[poolFactoryType], 
-                this.wallet)
-        }
-    }
-
-    async attachToPool(poolType, poolAddress) {
-        if (this.pool) {
-            return this.pool
-        } else {
-            await this.initializeUpalaContracts(poolType)
-            const poolContract = new ethers.Contract(
-            poolAddress, 
-            this.abis[poolType], 
-            this.wallet)
-            this.pool = poolContract
-            return poolContract
-        }
-    }
-
-    async deployPool(poolType) {
-        await this.initializeUpalaContracts(poolType)
-        const tx = await this.poolFactoryTemp.connect(this.wallet).createPool()
-        const blockNumber = (await tx.wait(1)).blockNumber
-        const eventFilter = this.upala.filters.NewPool();
-        const events = await this.upala.queryFilter(eventFilter, blockNumber, blockNumber);
-        const newPoolAddress = events[0].args.poolAddress
-        return this.attachToPool(poolType, newPoolAddress)
-    }
-
     /*************
     MANAGE SCORES
     *************/
+    // as Signed Scores Pool may have multiple subBundles within single bundle
+    // every subBundle is assigned a uniqe ID. Calculated the same way as 
+    // Bundle ID. The first subBundleID equals its Bundle ID
 
     // if queue is clean new score bundle can be created
     publishNew(users) {
         // check
         this._requireCleanQueue()
-        
-        // process
-        this.subBundle.public.users = users
+        this.subBundle.users = users
         this.process()
     }
 
@@ -187,12 +171,14 @@ class PoolManager {
         // todo check if this is Signed scores pool
         this._requireCleanQueue()
         this._requireActiveBundleID(bundleID)
+        this.subBundle.users = users
 
-        // process
-        this.subBundle.public.users = users
+        // bundle data and users
+        // bundleID is taken from args
         this.subBundle.public.bundleID = bundleID
-        this.subBundle.ethTx = "see the first subBundle" // any text to skip tx step when processing
+        this.subBundle.ethTx = "see the first subBundle" // skipping tx step when processing
         this.subBundle.ethTxMined = true
+        
         this.process()
     }
 
@@ -202,22 +188,12 @@ class PoolManager {
         // check
         _requireUsers()
 
-        // as Signed Scores Pool may have multiple subBundles within single bundle
-        // every subBundle is assigned a uniqe ID. Calculated the same way as 
-        // Bundle ID. The first subBundleID equals its Bundle ID
-        this.subBundle.public.subBundleID = objectHash(this.subBundle.public.users, { algorithm: 'md5' })
-        if (!this.subBundle.public.bundleID) {
-            this.subBundle.public.bundleID = this.subBundle.public.subBundleID
-        }
-        !(this.subBundle.public.subBundleID) ? //todo
-            
-        this._signUsers() : {}
-
-        // process
+        // process (saves status if fails)
         try {
-            !(this.subBundle.ethTx) ? this._pushToChain() : {}
-            !(this.subBundle.ethTxMined) ? this._waitTx() : {}
-            !(this.subBundle.dbTransaction) ? this._pushToRemoteDb() : {}
+            !(this.subBundle.public.signature) ? await this._createSubBundle() : {}
+            !(this.subBundle.ethTx) ? await this._pushToChain() : {}
+            !(this.subBundle.ethTxMined) ? await this._waitTx() : {}
+            !(this.subBundle.dbTransaction) ? await this._pushToRemoteDb() : {}
         } catch ( error ) {
             throw( error );
         } finally {
@@ -264,13 +240,13 @@ class PoolManager {
     ********/
 
     _requireUsers() {
-        if (this.subBundle.public.users) {
+        if (!this.subBundle.users) {
             throw new Error("No users loaded. Publish or append users first") }
         return true
     }
 
     _requireCleanQueue() {
-        if (!this.subBundle.public.users) { 
+        if (this.subBundle.users) { 
             throw new Error("Got users processing. Finish processing first") }
         return true
     }
@@ -280,43 +256,58 @@ class PoolManager {
         return true
     }
 
-
-
-
-    async _sign() {
-        // sign individual scores
-        // the signatures will be used by smart contract to prove user score
-        for (const user of this.subBundle.public.users) {
+    // sign individual scores
+    // the signatures will be used by smart contract to prove user score
+    async _signUsers(users, bundleID, wallet) {
+        const signedUsers = users
+        for (const user of signedUsers) {
             const message = utils.solidityKeccak256(
                 [ "address", "uint8", "bytes32" ], 
-                [user.address, user.score, this.subBundle.public.bundleID])
-            user.signature = await this.wallet.signMessage(message)
+                [user.address, user.score, bundleID])
+            user.signature = await wallet.signMessage(message)
         }
+        return signedUsers
+    }
 
-        // create public, sign the whole bundle 
-        // (score explorer will use this signature for auth)
+    async _createSubBundle() {
+        // Assign subBunlde and Bundle ids
+        this.subBundle.public.subBundleID = _objectHash(subBundle.users, { algorithm: 'md5' })
+        // For the first subBundleID, bundleID and subBundleID are equal
+        if (!this.subBundle.public.bundleID) {
+            this.subBundle.public.bundleID = this.subBundle.public.subBundleID
+        }
+        
+        // Sing users
+        this.subBundle.public.signedUsers = 
+            this._signUsers(this.subBundle.users, this.subBundle.public.bundleID, this.wallet)
+        delete this.subBundle.users // don't need input users anymore
+        
+        // Append other necessary fields
         this.subBundle.public.poolAddress = this.pool.address
         this.subBundle.public.poolManagerAddress = this.wallet.address
-        this.subBundle.public.signature = objectHash(
+
+        // sign the whole bundle
+        // (score explorer will use this signature for auth)
+        const hash = _objectHash(
             this.subBundle.public, 
             { algorithm: 'md5' })
+        // https://docs.ethers.io/v5/api/signer/#Signer-signMessage
+        let binaryData = ethers.utils.arrayify(hash);
+        this.subBundle.public.signature = await wallet.signMessage(binaryData)
     }
 
-
-
-
-    _pushToChain() {
-        // is it already onChain? graph
-        this.subBundle.ethTx = this.pool.publishBundle(bundle)
+    async _pushToChain() {
+        // todo is it already onChain? graph
+        this.subBundle.ethTx = await this.pool.publishBundle(bundle)
     }
 
-    _waitTx() {
-        this.subBundle.ethTx.wait(1)
+    async _waitTx() {
+        await this.subBundle.ethTx.wait(1)
         this.subBundle.ethTxMined = true
     }
 
-    _pushToRemoteDb() {
-        this.subBundle.dbTransaction = this.scoreExplorer.publishBundle(bundle)
+    async _pushToRemoteDb() {
+        this.subBundle.dbTransaction = await this.scoreExplorer.publishBundle(bundle)
     }
 }
 
