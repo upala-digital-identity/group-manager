@@ -4,31 +4,29 @@ const path = require('path')
 const fs = require('fs')
 const _objectHash = require('object-hash')
 
-// TODO
-// see how to better treat args in deploy/attach functions
-// ScoreExplorer minimal - save to folder
-// different folders for different pools for local db (think and describe)
-// Comment all 
-
-// Production TODOs
+// Production TODOs (see "production" comments)
 // better Error handling (causes) 
 // decide on ethereum interaction (a function that get a tx and reports to user)
 
-/**************
-INITIALIZE POOL
-***************/
+/******************
+POOL INITIALIZATION 
+*******************/
 
+// deploys new pool through a pool factory of selected pool type 
 async function deployPool(poolType, wallet) { // todo override addresses
+    // Prepare pool factory (get address from constants depending on chainID)
     const addresses = upalaConstants.getAddresses({chainID: await wallet.getChainId()})
     const poolFactoryType = poolType + 'Factory'
     const poolFactoryTemp = new ethers.Contract(
         addresses[poolFactoryType], 
         upalaConstants.getAbis()[poolFactoryType], 
         wallet)
-
+    
+    // Spawn a new pool from pool factory
     const tx = await poolFactoryTemp.connect(wallet).createPool()
     const blockNumber = (await tx.wait(1)).blockNumber
     
+    // retrieve new pool address from Upala event (todo - is there an easier way?)
     const upala = new ethers.Contract(
         addresses.Upala,
         upalaConstants.getAbis().Upala, 
@@ -36,59 +34,66 @@ async function deployPool(poolType, wallet) { // todo override addresses
     const eventFilter = upala.filters.NewPool();
     const events = await upala.queryFilter(eventFilter, blockNumber, blockNumber);
     const newPoolAddress = events[0].args.poolAddress
+    
+    // returns ethersJS pool contact
     return attachToPool(poolType, newPoolAddress, wallet)
 }
 
-async function attachToPool(poolType, poolAddress, wallet) {
+// attaches to an existing pool factory of selected pool type
+async function attachToPool(poolAddress, poolType, wallet) {
     const poolContract = new ethers.Contract(
         poolAddress, 
         upalaConstants.getAbis()[poolType], 
         wallet)
-    return poolContract
+    return poolContract // pool contact as per ethersJS
 }
 
+// Graph gateway
+// "is this bundleHash deleted"
+// "what is the current base score for the pool address"
 class Graph {
     constructor(endpoint) {
         this.endpoint = endpoint;
     }
-    // "is this bundleHash deleted"
-    // "what is the current base score for the pool address"
 }
 
+// Publicly available individual scores DB. Stores scores and their proofs.
+// (while POCing need to publish 'live' folder of Local DB)
 class ScoreExplorer {
     constructor(endpoint) {}
-    publishBundle(bundle){}
-
+    publishBundle(bundle) {
+        return "For now let us all agree the scores are published"
+    }
 }
 
+// Stores and retrieve unprocessed subBundles
+// Moves subBundles through the following folders:
+// "unprocessed" -> "live"
 class LocalDB {
-    // Moves users file through the following folders (or similar)
-    // userss -> unprocessed (valid_users, receipt) -> live
-    // if any file is under this procedure, do nothing
-    // score bundles are named using date and user 
-    // proposed name 2021-08-22-meta-game-friends
-    constructor(endpoint) {
-        // if workdir, save to files (also connect with tests this way)
-        if (endpoint.workdir) {
 
-            this.workdir = endpoint.workdir
+    constructor(workdir, options) {
+        // todo option skipSaving - for tests
+        this.workdir = workdir
 
-            // define paths
-            this.unprocessedDir = path.join(this.workdir, "unprocessed")
-            this.liveDir = path.join(this.workdir, "live")
+        // define paths
+        this.unprocessedDir = path.join(this.workdir, "unprocessed")
+        this.liveDir = path.join(this.workdir, "live")
 
-            // check write permissions 
-            fs.accessSync(path, fs.constants.W_OK);
+        // check write permissions 
+        fs.accessSync(path, fs.constants.W_OK);
 
-            // create folders if needed
-            if (!fs.existsSync(dir)){
-                fs.mkdirSync(dir);
-            }
+        // create folders if needed
+        if (!fs.existsSync(dir)){
+            fs.mkdirSync(dir);
         }
     }
 
+    // saves subBundle "as is" into a JSON file
     updateSubBundle(subBundle) {
         const fileName = subBundle.subBundleID + ".json"
+        // considers the subBundle is "live" if dbTransaction is present
+        // (meaning it is both on-chain and proofs are available publically)
+        // otherwise the subBundle is "unprocessed"
         if (subBundle.dbTransaction) {
             // todo add date to filename (the first subBundle will bear ethereum tx id)
             const live = path.join(this.liveDir, subBundle.bundleID, fileName)
@@ -99,6 +104,7 @@ class LocalDB {
         }
     }
 
+    // retrieves subBundle object from JSON
     getUnprocessedSubBundle() {
         const unprocessed = fs.readdirSync(testFolder)
         if (unprocessed) {
@@ -106,6 +112,7 @@ class LocalDB {
         }
     }
 
+    // returns list of all public subBundles
     getActiveBundlesList(){
         return fs.readdirSync(this.liveDir).filter(function (file) {
             return fs.statSync(this.liveDir+'/'+file).isDirectory();
@@ -113,44 +120,35 @@ class LocalDB {
     }
 }
 
+// Manages all settings of the provided pool 
+// Individual user scores come in bundles (and in subBundles). 
+// Can process a signle bundle at a time.
+// this.subBundle
+//      ethTx - tx hash of publishBundle function call 
+//      ethTxMined - is tx mined, true or false
+//      dbTransaction - a transaction to ScoreExplorer
+//      users // input users and their scores (deleted after bundle is created)
+//      public // the below goes to score Explorer
+//          bundleId
+//          subBundleId
+//          poolAddress
+//          poolManagerAddress
+//          signedUsers - users, scores and proofs for the scores
+//          signature - signature of the all "public" fields
 class PoolManager {
 
-    // PROPERTIES
-
+    // ARGS
+    // pool - initialized pool contract
     // localDB
     // scoreExplorer
-    // wallet - todo require pool as argument instaed, get wallet from pool
-    // addresses
-    // userMessageCallback
-    // pool - initialized pool contract // todo remove deploy/atach logic from class 
-    // subBundle
-    //      ethTx
-    //      ethTxMined
-    //      dbTransaction
-    //      users // input users and their scores (deleted after signing)
-    //      public // the below goes to score Explorer // transaction, record
-    //          bundleId
-    //          subBundleId
-    //          poolAddress
-    //          poolManagerAddress
-    //          signedUsers
-    //          signature - signature of the whole public data
-
     constructor(args) {
-
-        // ARGS //
-        // DBs
+        this.pool = args.pool // Initialized pool
         this.localDB = new LocalDB(args.localDbEndpoint)
         this.scoreExplorer = new ScoreExplorer(args.scoreExplorerEndpoint)
-        // Initialized pool contract and signer
-        this.pool = args.pool
-        this.signer = args.pool.signer
-        // Overrides
-        this.addresses = args.overrideAddresses
-        // Callback
-        this.userMessageCallback = args.userMessageCallback
-
+        
         // INIT //
+        // get signer out of pool contract
+        this.signer = args.pool.signer
         // Load unprocessed sub bundle
         this.subBundle = this.localDB.getUnprocessedSubBundle()
     }
@@ -164,38 +162,35 @@ class PoolManager {
 
     // if queue is clean new score bundle can be created
     publishNew(users) {
-        // check
         this._requireCleanQueue()
         this.subBundle.users = users
+
+        await this._createSubBundle()
         this.process()
     }
 
     // if queue is clean scores can be appended to an existing bundle 
-    // Append is available for signed scores pool only
+    // (Append is available for Signed Scores Pool only)
     append(users, bundleID) {
-        // todo check if this is Signed scores pool
+        // production. check if this is Signed scores pool
         this._requireCleanQueue()
         this._requireActiveBundleID(bundleID)
+        
         this.subBundle.users = users
-
-        // bundle data and users
-        // bundleID is taken from args
         this.subBundle.public.bundleID = bundleID
         this.subBundle.ethTx = "see the first subBundle" // skipping tx step when processing
-        this.subBundle.ethTxMined = true
+        this.subBundle.ethTxMined = true // skipping tx step
         
+        await this._createSubBundle()
         this.process()
     }
 
     // if there's an unprocessed bundle, this function should be called
-    // new -> ☑️ bundleID -> ☑️ chain -> ☑️ signed -> ☑️ live
     process() {
-        // check
-        _requireUsers()
+        this._requireSubBundle()
 
         // process (saves status if fails)
-        try {
-            !(this.subBundle.public.signature) ? await this._createSubBundle() : {}
+        try { 
             !(this.subBundle.ethTx) ? await this._pushToChain() : {}
             !(this.subBundle.ethTxMined) ? await this._waitTx() : {}
             !(this.subBundle.dbTransaction) ? await this._pushToRemoteDb() : {}
@@ -206,10 +201,12 @@ class PoolManager {
         }
     }
 
+    // returns list of active bundles
     getActiveBundlesList() {
         return this.localDB.getActiveBundlesList()
     }
 
+    // deletes score bundle from the pool (calls pool contract)
     async deleteScoreBundleId(scoreBundleId) {
         const tx = await this.pool.deleteScoreBundleId(scoreBundleId)
         this.userMessageCallback({message: tx})
@@ -217,10 +214,13 @@ class PoolManager {
         this.userMessageCallback({message: tx})
     }
 
+    // retrieves base score from pool contract
+    // production. use Graph?
     async getBaseScore() {
         return await this.pool.baseScore()
     }
 
+    // sets new base score on the pool contract
     async setBaseScore(newScore) {
         // todo same logic as with deleteScoreBundleId
         this.pool.setBaseScore(newScore)
@@ -230,11 +230,13 @@ class PoolManager {
     MANAGE OTHER
     ************/
 
+    // withdraws pool contract funds
     async withdrawFromPool(recipient, amount) {
         // todo same logic as with deleteScoreBundleId
         this.pool.withdrawFromPool(recipient, amount)
     }
 
+    // updates pool contract metadata
     async updateMetadata(newMetadata) {
         // todo same logic as with deleteScoreBundleId
         this.pool.updateMetadata(newMetadata)
@@ -244,20 +246,20 @@ class PoolManager {
     INTERNAL
     ********/
 
-    _requireUsers() {
-        if (!this.subBundle.users) {
+    _requireSubBundle() {
+        if (!this.subBundle.public.signature) {
             throw new Error("No users loaded. Publish or append users first") }
         return true
     }
 
     _requireCleanQueue() {
-        if (this.subBundle.users) { 
+        if (this.subBundle.public.signature) { 
             throw new Error("Got users processing. Finish processing first") }
         return true
     }
 
     _requireActiveBundleID(bundleID) {
-        // is it already onChain? graph
+        // is it already onChain? production. graph
         return true
     }
 
@@ -274,6 +276,7 @@ class PoolManager {
         return signedUsers
     }
 
+    // creates proof for users scores, signes public data 
     async _createSubBundle() {
         // Assign subBunlde and Bundle ids
         this.subBundle.public.subBundleID = _objectHash(subBundle.users, { algorithm: 'md5' })
@@ -301,18 +304,21 @@ class PoolManager {
         this.subBundle.public.signature = await this.signer.signMessage(binaryData)
     }
 
+    // pushes bundleID to pool contract
     async _pushToChain() {
         // todo is it already onChain? graph
         this.subBundle.ethTx = await this.pool.publishBundle(bundle)
     }
 
+    // waits for the push tx to be mined 
     async _waitTx() {
         await this.subBundle.ethTx.wait(1)
-        this.subBundle.ethTxMined = true
+        this.subBundle.ethTxMined = true  // todo is this ok?
     }
 
+    // pushes signed scores to ScoreExplorer (makes them publically available)
     async _pushToRemoteDb() {
-        this.subBundle.dbTransaction = await this.scoreExplorer.publishBundle(bundle)
+        this.subBundle.dbTransaction = this.scoreExplorer.publishBundle(bundle)
     }
 }
 
