@@ -5,14 +5,18 @@ const fs = require('fs')
 const _objectHash = require('object-hash')
 
 // TODO
-// move pool creation/attachement out of PoolManager class
-// different folders for different pools for local db
-// decide on ethereum interaction (a function that get a tx and reports to user)
-// 
+// see how to better treat args in deploy/attach functions
+// ScoreExplorer minimal - save to folder
+// different folders for different pools for local db (think and describe)
+// Comment all 
 
-/*********
-INITIALIZE
-**********/
+// Production TODOs
+// better Error handling (causes) 
+// decide on ethereum interaction (a function that get a tx and reports to user)
+
+/**************
+INITIALIZE POOL
+***************/
 
 async function deployPool(poolType, wallet) { // todo override addresses
     const addresses = upalaConstants.getAddresses({chainID: await wallet.getChainId()})
@@ -135,18 +139,19 @@ class PoolManager {
     constructor(args) {
 
         // ARGS //
-
         // DBs
         this.localDB = new LocalDB(args.localDbEndpoint)
         this.scoreExplorer = new ScoreExplorer(args.scoreExplorerEndpoint)
-        // Wallet
-        this.wallet = args.wallet
+        // Initialized pool contract and signer
+        this.pool = args.pool
+        this.signer = args.pool.signer
         // Overrides
         this.addresses = args.overrideAddresses
         // Callback
         this.userMessageCallback = args.userMessageCallback
 
         // INIT //
+        // Load unprocessed sub bundle
         this.subBundle = this.localDB.getUnprocessedSubBundle()
     }
 
@@ -258,13 +263,13 @@ class PoolManager {
 
     // sign individual scores
     // the signatures will be used by smart contract to prove user score
-    async _signUsers(users, bundleID, wallet) {
+    async _signUsers(users, bundleID, signer) {
         const signedUsers = users
         for (const user of signedUsers) {
             const message = utils.solidityKeccak256(
                 [ "address", "uint8", "bytes32" ], 
                 [user.address, user.score, bundleID])
-            user.signature = await wallet.signMessage(message)
+            user.signature = await signer.signMessage(message)
         }
         return signedUsers
     }
@@ -279,12 +284,12 @@ class PoolManager {
         
         // Sing users
         this.subBundle.public.signedUsers = 
-            this._signUsers(this.subBundle.users, this.subBundle.public.bundleID, this.wallet)
+            this._signUsers(this.subBundle.users, this.subBundle.public.bundleID, this.signer)
         delete this.subBundle.users // don't need input users anymore
         
         // Append other necessary fields
         this.subBundle.public.poolAddress = this.pool.address
-        this.subBundle.public.poolManagerAddress = this.wallet.address
+        this.subBundle.public.poolManagerAddress = this.signer.address
 
         // sign the whole bundle
         // (score explorer will use this signature for auth)
@@ -293,7 +298,7 @@ class PoolManager {
             { algorithm: 'md5' })
         // https://docs.ethers.io/v5/api/signer/#Signer-signMessage
         let binaryData = ethers.utils.arrayify(hash);
-        this.subBundle.public.signature = await wallet.signMessage(binaryData)
+        this.subBundle.public.signature = await this.signer.signMessage(binaryData)
     }
 
     async _pushToChain() {
