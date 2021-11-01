@@ -1,4 +1,4 @@
-const upalaConstants = require('upala-constants')
+const upalaConstants = require('@upala/constants')
 const ethers = require('ethers')
 const path = require('path')
 const fs = require('fs')
@@ -15,22 +15,15 @@ POOL INITIALIZATION
 // deploys new pool through a pool factory of selected pool type 
 async function deployPool(poolType, wallet) { // todo override addresses
     // Prepare pool factory (get address from constants depending on chainID)
-    const addresses = upalaConstants.getAddresses({chainID: await wallet.getChainId()})
-    const poolFactoryType = poolType + 'Factory'
-    const poolFactoryTemp = new ethers.Contract(
-        addresses[poolFactoryType], 
-        upalaConstants.getAbis()[poolFactoryType], 
-        wallet)
+    const upConsts = new UpalaConstants(await wallet.getChainId())
+    const poolFactoryTemp = upConsts.getContract(poolType + 'Factory', wallet)
     
     // Spawn a new pool from pool factory
     const tx = await poolFactoryTemp.connect(wallet).createPool()
-    const blockNumber = (await tx.wait(1)).blockNumber
     
     // retrieve new pool address from Upala event (todo - is there an easier way?)
-    const upala = new ethers.Contract(
-        addresses.Upala,
-        upalaConstants.getAbis().Upala, 
-        wallet)
+    const blockNumber = (await tx.wait(1)).blockNumber
+    const upala = upConsts.getContract("Upala", wallet)
     const eventFilter = upala.filters.NewPool();
     const events = await upala.queryFilter(eventFilter, blockNumber, blockNumber);
     const newPoolAddress = events[0].args.poolAddress
@@ -40,12 +33,12 @@ async function deployPool(poolType, wallet) { // todo override addresses
 }
 
 // attaches to an existing pool factory of selected pool type
-async function attachToPool(poolAddress, poolType, wallet) {
-    const poolContract = new ethers.Contract(
-        poolAddress, 
-        upalaConstants.getAbis()[poolType], 
-        wallet)
-    return poolContract // pool contact as per ethersJS
+async function attachToPool(poolAddress, poolType, wallet, upalaConstants) {
+    const upConsts = upalaConstants
+    if (!upConsts) {
+        upConsts = new UpalaConstants(await wallet.getChainId())
+    }
+    return upConsts.getContract(poolType, wallet, poolAddress) // pool contact as per ethersJS
 }
 
 // Graph gateway
@@ -161,7 +154,7 @@ class PoolManager {
     // Bundle ID. The first subBundleID equals its Bundle ID
 
     // if queue is clean new score bundle can be created
-    publishNew(users) {
+    async publishNew(users) {
         this._requireCleanQueue()
         this.subBundle.users = users
 
@@ -171,7 +164,7 @@ class PoolManager {
 
     // if queue is clean scores can be appended to an existing bundle 
     // (Append is available for Signed Scores Pool only)
-    append(users, bundleID) {
+    async append(users, bundleID) {
         // production. check if this is Signed scores pool
         this._requireCleanQueue()
         this._requireActiveBundleID(bundleID)
@@ -186,7 +179,7 @@ class PoolManager {
     }
 
     // if there's an unprocessed bundle, this function should be called
-    process() {
+    async process() {
         this._requireSubBundle()
 
         // process (saves status if fails)
