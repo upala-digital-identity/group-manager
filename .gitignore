@@ -1,5 +1,6 @@
 node_modules/
 build/
+workdir/
 wrangler.toml
 README.html
 .DS_Store

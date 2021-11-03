@@ -1,5 +1,5 @@
-const upalaConstants = require('@upala/constants')
-const ethers = require('ethers')
+const { UpalaConstants } = require('@upala/constants')
+const { ethers, utils } = require('ethers')
 const path = require('path')
 const fs = require('fs')
 const _objectHash = require('object-hash')
@@ -30,15 +30,12 @@ async function deployPool(poolType, wallet) {
   const newPoolAddress = events[0].args.poolAddress
 
   // returns ethersJS pool contact
-  return attachToPool(poolType, newPoolAddress, wallet)
+  return attachToPool(poolType, wallet, newPoolAddress, upConsts)
 }
 
 // attaches to an existing pool factory of selected pool type
-async function attachToPool(poolAddress, poolType, wallet, upalaConstants) {
-  const upConsts = upalaConstants
-  if (!upConsts) {
-    upConsts = new UpalaConstants(await wallet.getChainId())
-  }
+async function attachToPool(poolType, wallet, poolAddress, upalaConstants) {
+  const upConsts = (upalaConstants) ? upalaConstants : new UpalaConstants(await wallet.getChainId())
   return upConsts.getContract(poolType, wallet, poolAddress) // pool contact as per ethersJS
 }
 
@@ -65,25 +62,27 @@ class ScoreExplorer {
 // "unprocessed" -> "live"
 class LocalDB {
   constructor(workdir, options) {
-    // todo option skipSaving - for tests
+    // define paths (todo skip saving to disk (for tests))
     this.workdir = workdir
-
-    // define paths
     this.unprocessedDir = path.join(this.workdir, 'unprocessed')
     this.liveDir = path.join(this.workdir, 'live')
 
+    // create folder structure
+    const paths = [this.workdir, this.unprocessedDir, this.liveDir]
+    paths.forEach(dir => {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir)
+      }
+    });
     // check write permissions
-    fs.accessSync(path, fs.constants.W_OK)
-
-    // create folders if needed
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir)
-    }
+    paths.forEach(dir => {
+      fs.accessSync(dir, fs.constants.W_OK)
+    });
   }
 
   // saves subBundle "as is" into a JSON file
   updateSubBundle(subBundle) {
-    const fileName = subBundle.subBundleID + '.json'
+    const fileName = subBundle.public.subBundleID + '.json'
     // considers the subBundle is "live" if dbTransaction is present
     // (meaning it is both on-chain and proofs are available publically)
     // otherwise the subBundle is "unprocessed"
@@ -99,9 +98,12 @@ class LocalDB {
 
   // retrieves subBundle object from JSON
   getUnprocessedSubBundle() {
-    const unprocessed = fs.readdirSync(testFolder)
-    if (unprocessed) {
-      return JSON.parse(fs.readFileSync(unprocessed[0]))
+    const unprocessed = fs.readdirSync(this.unprocessedDir)
+    if (unprocessed[0]) {
+      return JSON.parse(fs.readFileSync(path.join(this.unprocessedDir, unprocessed[0])))
+    } else {
+      // returning empty subBundle
+      return { public: {} }
     }
   }
 
@@ -129,20 +131,18 @@ class LocalDB {
 //          signedUsers - users, scores and proofs for the scores
 //          signature - signature of the all "public" fields
 class PoolManager {
-  // ARGS
-  // pool - initialized pool contract
-  // localDB
-  // scoreExplorer
-  constructor(args) {
-    this.pool = args.pool // Initialized pool
-    this.localDB = new LocalDB(args.localDbEndpoint)
-    this.scoreExplorer = new ScoreExplorer(args.scoreExplorerEndpoint)
+  constructor(pool, localDbEndpoint, scoreExplorerEndpoint) {
+    // ARGS //
+    this.pool = pool // Initialized pool
+    this.localDB = new LocalDB(localDbEndpoint)
+    this.scoreExplorer = new ScoreExplorer(scoreExplorerEndpoint)
 
     // INIT //
     // get signer out of pool contract
-    this.signer = args.pool.signer
+    this.signer = this.pool.signer
     // Load unprocessed sub bundle
     this.subBundle = this.localDB.getUnprocessedSubBundle()
+    console.log(this.subBundle)
   }
 
   /*************
@@ -155,6 +155,7 @@ class PoolManager {
   // if queue is clean new score bundle can be created
   async publishNew(users) {
     this._requireCleanQueue()
+    console.log("new bundle")
     this.subBundle.users = users
 
     await this._createSubBundle()
@@ -262,7 +263,9 @@ class PoolManager {
   async _signUsers(users, bundleID, signer) {
     const signedUsers = users
     for (const user of signedUsers) {
-      const message = utils.solidityKeccak256(['address', 'uint8', 'bytes32'], [user.address, user.score, bundleID])
+      const message = utils.solidityKeccak256(
+        ['address', 'uint8', 'bytes32'], 
+        [user.address, user.score, bundleID])
       user.signature = await signer.signMessage(message)
     }
     return signedUsers
@@ -271,14 +274,17 @@ class PoolManager {
   // creates proof for users scores, signes public data
   async _createSubBundle() {
     // Assign subBunlde and Bundle ids
-    this.subBundle.public.subBundleID = _objectHash(subBundle.users, { algorithm: 'md5' })
+    this.subBundle.public.subBundleID = ethers.utils.hexZeroPad(
+      '0x' + _objectHash(this.subBundle.users, { algorithm: 'md5' }),
+      32
+    ) 
     // For the first subBundleID, bundleID and subBundleID are equal
     if (!this.subBundle.public.bundleID) {
       this.subBundle.public.bundleID = this.subBundle.public.subBundleID
     }
 
     // Sing users
-    this.subBundle.public.signedUsers = this._signUsers(
+    this.subBundle.public.signedUsers = await this._signUsers(
       this.subBundle.users,
       this.subBundle.public.bundleID,
       this.signer
@@ -291,7 +297,7 @@ class PoolManager {
 
     // sign the whole bundle
     // (score explorer will use this signature for auth)
-    const hash = _objectHash(this.subBundle.public, { algorithm: 'md5' })
+    const hash = '0x' + _objectHash(this.subBundle.public, { algorithm: 'md5' })
     // https://docs.ethers.io/v5/api/signer/#Signer-signMessage
     let binaryData = ethers.utils.arrayify(hash)
     this.subBundle.public.signature = await this.signer.signMessage(binaryData)
@@ -300,7 +306,7 @@ class PoolManager {
   // pushes bundleID to pool contract
   async _pushToChain() {
     // todo is it already onChain? graph
-    this.subBundle.ethTx = await this.pool.publishBundle(bundle)
+    this.subBundle.ethTx = await this.pool.publishBundle(this.subBundle.public.bundleID)
   }
 
   // waits for the push tx to be mined
@@ -316,21 +322,34 @@ class PoolManager {
 }
 
 async function main() {
+  // setup wallet
   const provider = new ethers.providers.JsonRpcProvider('http://localhost:8545')
   const mnemonic = 'test test test test test test test test test test test junk'
   const poolManagerWallet = ethers.Wallet.fromMnemonic(mnemonic).connect(provider)
 
-  const poolManager = new PoolManager({
-    wallet: poolManagerWallet,
-  })
-  // const poolContract = await poolManager.deployPool('SignedScoresPool')
-  const poolContract = await poolManager.attachToPool('SignedScoresPool', '0x9b438758098003c07320542c129dFEecb04cf3E2')
+  // deploy pool
+  const poolContract = await deployPool(poolType = 'SignedScoresPool', wallet = poolManagerWallet)
+  // const poolContract = await attachToPool('SignedScoresPool', poolManagerWallet, "0x2F6252a8cCf676397E40203d3D99C25DaaE88A52")
+
+  // manage pool
+  const poolManager = new PoolManager(
+    poolContract,
+    "/Users/petrporobov/Projects/group-manager/workdir",
+    "/Users/petrporobov/Projects/group-manager/workdir")
+  const users = [
+    { address: '0x2819c144d5946404c0516b6f817a960db37d4929', score: "1" },
+    { address: '0xdac17f958d2ee523a2206206994597c13d831ec7', score: "1" }
+  ]
+  
+  await poolManager.publishNew(users)
+  // await poolManager.process()
+
   console.log('pool address:', poolContract.address)
-  console.log('approvedToken:', await poolContract.approvedToken())
+  // console.log('approvedToken:', await poolContract.approvedToken())
 }
 
 main()
-  .then(() => process.exit(0))
+  .then(() => process.exit(0) )
   .catch((error) => {
     console.error(error)
     process.exit(1)

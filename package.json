@@ -41,6 +41,7 @@
     "compile": "waffle",
     "pretest": "yarn compile",
     "test": "mocha",
+    "dev-run-group-manager": "node src/group-manager.js",
     "generate-merkle-root": "ts-node scripts/generate-merkle-root.ts",
     "generate-merkle-root:example": "ts-node scripts/generate-merkle-root.ts --input scripts/example.json",
     "prepublishOnly": "yarn test"
