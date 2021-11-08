@@ -47,67 +47,114 @@ class Graph {
   }
 }
 
+class FileBasedDB {
+  constructor(workdir) {
+    this.workdir = workdir
+    this.checkOrCreateDir(this.workdir)
+  }
+
+  checkOrCreateDir(dir) {
+    // check write permissions
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir)
+    }
+    // check write permissions
+    fs.accessSync(dir, fs.constants.W_OK)
+  }
+
+  buildFullDir(relativeDirArray) {
+    const relativeDir = relativeDirArray.join('/')
+    return path.join(this.workdir, relativeDir)
+  }
+
+  createDir(relativeDirArray) {
+    relativeDirArray.forEach(dir => { checkOrCreateDir(dir) });
+  }
+
+  save(relativeDirArray, fileName, fileContents) {
+
+
+    // todo build relativeDirArray out of array
+    
+
+    const fullDir = buildFullDir(relativeDirArray)
+    fs.writeFileSync(path.join(fullDir, fileName), fileContents)
+  }
+
+  getOneFile(relativeDirArray) {
+    const fullDir = buildFullDir(relativeDirArray)
+    const unprocessed = fs.readdirSync(fullDir)
+    if (unprocessed[0]) {
+      return JSON.parse(fs.readFileSync(path.join(fullDir, unprocessed[0])))
+    } else {
+      return null
+    }
+  }
+
+  getFoldersList(relativeDirArray) {
+    const fullDir = buildFullDir(relativeDirArray)
+    return fs.readdirSync(fullDir).filter(function (file) {
+      return fs.statSync(fullDir + '/' + file).isDirectory()
+    })
+  }
+}
+
 // Publicly available individual scores DB. Stores scores and their proofs.
 // (while POCing need to publish 'live' folder of Local DB)
 class ScoreExplorer {
-  constructor(endpoint) {}
-  publishBundle(publicBundleData) {
-    return 'For now let us all agree the scores are published'
+  constructor(workdir) {
+    this.fileBasedDB = new FileBasedDB(workdir)
+    this.publishedDir = 'published'
+  }
+  publishBundle(subBundle) {
+    return this.fileBasedDB.save(
+      [this.publishedDir],
+      subBundle.public.subBundleID.slice(-6) + '.json',
+      JSON.stringify(subBundle, null, 2))
   }
 }
 
 // Stores and retrieve unprocessed subBundles
 // Moves subBundles through the following folders:
 // "unprocessed" -> "live"
-
-function checkOrCreateDir(dir) {
-  // check write permissions
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir)
-  }
-  // check write permissions
-  fs.accessSync(dir, fs.constants.W_OK)
-}
-
 class LocalDB {
   constructor(workdir, options) {
     // define paths (todo skip saving to disk (for tests))
     this.workdir = workdir
-    this.unprocessedDir = path.join(this.workdir, 'unprocessed')
-    this.liveDir = path.join(this.workdir, 'live')
-
-    // create folder structure
-    // todo try - catch
-    const paths = [this.workdir, this.unprocessedDir, this.liveDir]
-    paths.forEach(dir => { checkOrCreateDir(dir) });
+    this.unprocessedDir = 'unprocessed'
+    this.liveDir = 'live'
   }
 
   // saves subBundle "as is" into a JSON file
-  updateSubBundle(subBundle) {
+  storeAsUnprocessed(subBundle) {
+    // production add date as prefix
+    return this.fileBasedDB.save(
+      [this.unprocessedDir],
+      subBundle.public.subBundleID.slice(-6) + '.json',
+      JSON.stringify(subBundle, null, 2))
+  }
+
+  // saves subBundle "as is" into a JSON file
+  storeProcessed(subBundle) {
     // production add date as prefix
     const slicedBundleName = subBundle.public.bundleID.slice(-6)
     const slicedSubBundleName = subBundle.public.subBundleID.slice(-6)
-    const fileName = slicedSubBundleName + '.json'
-    // considers the subBundle is "live" if dbTransaction is present
-    // (meaning it is both on-chain and proofs are available publically)
-    // otherwise the subBundle is "unprocessed"
-    if (subBundle.dbTransaction) {
-      // todo add date to filename (the first subBundle will bear ethereum tx id)
-      const bundleDir = path.join(this.liveDir, slicedBundleName)
-      checkOrCreateDir(bundleDir)
-      const liveBundle = path.join(bundleDir, fileName)
-      fs.writeFileSync(liveBundle, JSON.stringify(subBundle, null, 2))
-    } else {
-      const unprocessed = path.join(this.unprocessedDir, fileName)
-      fs.writeFileSync(unprocessed, JSON.stringify(subBundle, null, 2))
-    }
+    return this.fileBasedDB.save(
+      [this.liveDir, slicedBundleName],
+      slicedSubBundleName + '.json',
+      JSON.stringify(subBundle, null, 2)
+    )
+  }
+
+  clearUnprocessed() {
+    this.fileBasedDB.clearDir([this.unprocessedDir])
   }
 
   // retrieves subBundle object from JSON
   getUnprocessedSubBundle() {
-    const unprocessed = fs.readdirSync(this.unprocessedDir)
-    if (unprocessed[0]) {
-      return JSON.parse(fs.readFileSync(path.join(this.unprocessedDir, unprocessed[0])))
+    const unprocessed = this.fileBasedDB.getOneFile([this.unprocessedDir])
+    if (unprocessed) {
+      return JSON.parse(unprocessed)
     } else {
       // returning empty subBundle
       return { public: {} }
@@ -116,9 +163,7 @@ class LocalDB {
 
   // returns list of all public subBundles
   getActiveBundlesList() {
-    return fs.readdirSync(this.liveDir).filter(function (file) {
-      return fs.statSync(this.liveDir + '/' + file).isDirectory()
-    })
+    return getFoldersList([this.liveDir])
   }
 }
 
@@ -163,7 +208,6 @@ class PoolManager {
   // if queue is clean new score bundle can be created
   async publishNew(users) {
     this._requireCleanQueue()
-    console.log("new bundle")
     this.subBundle.users = users
 
     await this._createSubBundle()
@@ -204,7 +248,14 @@ class PoolManager {
     } catch (error) {
       throw error
     } finally {
-      this.localDB.updateSubBundle(this.subBundle)
+      if (subBundle.dbTransaction) {
+        this.subBundle.status = "live"
+        this.localDB.storeAsProcessed(this.subBundle)
+        this.localDB.clearUnprocessed()
+      } else {
+        this.subBundle.status = "unprocessed"
+        this.localDB.storeAsUnprocessed(this.subBundle)
+      }
     }
   }
 
