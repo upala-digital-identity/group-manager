@@ -170,13 +170,45 @@ class LocalDB {
 // Manages all settings of the provided pool
 // Individual user scores come in bundles (and in subBundles).
 // Can process a signle bundle at a time.
+
+// drafting postgre approach
+
+// Pool 
+//      poolAddress
+//      poolManagerAddress
+
+// Bundle (published on-chain)
+//      bundleId - bundle written on-chain
+//      poolAddress - link
+//      ethTx - tx hash of publishBundle function call
+//      ethTxMined - is tx mined, true or false
+
+// SubBundle
+//      subBundleId
+//      bundleId
+//      dbTransaction // the below goes to score Explorer (keep only for logging)
+//          bundleId - bundle written on-chain
+//          subBundleId
+//          poolAddress
+//          poolManagerAddress
+//          signedUsers - users, scores and proofs for the scores
+//          signature - signature of the all "public" fields
+
+// Record
+//      record id
+//      user address
+//      score
+//      proof for the score
+//      SubBundleID
+
+
 // this.subBundle
 //      ethTx - tx hash of publishBundle function call
 //      ethTxMined - is tx mined, true or false
 //      dbTransaction - a transaction to ScoreExplorer
 //      users // input users and their scores (deleted after bundle is created)
 //      public // the below goes to score Explorer
-//          bundleId
+//          bundleId - bundle written on-chain
 //          subBundleId
 //          poolAddress
 //          poolManagerAddress
