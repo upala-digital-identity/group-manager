@@ -50,10 +50,10 @@ class Graph {
 class FileBasedDB {
   constructor(workdir) {
     this.workdir = workdir
-    this.checkOrCreateDir(this.workdir)
+    this._checkOrCreateDir(this.workdir)
   }
 
-  checkOrCreateDir(dir) {
+  _checkOrCreateDir(dir) {
     // check write permissions
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir)
@@ -62,27 +62,31 @@ class FileBasedDB {
     fs.accessSync(dir, fs.constants.W_OK)
   }
 
-  buildFullDir(relativeDirArray) {
+  _buildFullDir(relativeDirArray) {
     const relativeDir = relativeDirArray.join('/')
     return path.join(this.workdir, relativeDir)
   }
 
-  createDir(relativeDirArray) {
-    relativeDirArray.forEach(dir => { checkOrCreateDir(dir) });
+  _createDir(relativeDirArray) {
+    let path = ''
+    relativeDirArray.forEach(dir => {
+      path = path + "/" + dir
+      this._checkOrCreateDir(path) });
   }
 
   save(relativeDirArray, fileName, fileContents) {
 
-
+    this._createDir([this.workdir, ...relativeDirArray])
     // todo build relativeDirArray out of array
-    
 
-    const fullDir = buildFullDir(relativeDirArray)
+
+    const fullDir = this._buildFullDir(relativeDirArray)
     fs.writeFileSync(path.join(fullDir, fileName), fileContents)
+    return fileName
   }
 
   getOneFile(relativeDirArray) {
-    const fullDir = buildFullDir(relativeDirArray)
+    const fullDir = this._buildFullDir(relativeDirArray)
     const unprocessed = fs.readdirSync(fullDir)
     if (unprocessed[0]) {
       return JSON.parse(fs.readFileSync(path.join(fullDir, unprocessed[0])))
@@ -92,11 +96,21 @@ class FileBasedDB {
   }
 
   getFoldersList(relativeDirArray) {
-    const fullDir = buildFullDir(relativeDirArray)
+    const fullDir = this._buildFullDir(relativeDirArray)
     return fs.readdirSync(fullDir).filter(function (file) {
       return fs.statSync(fullDir + '/' + file).isDirectory()
     })
   }
+
+  delete(relativeDirArray) {
+    fs.unlink(this._buildFullDir(relativeDirArray), function (err) {
+        if (err) {
+          console.error(err);
+        } else {
+          console.log("File removed:", path);
+        }
+      })
+    }
 }
 
 // Publicly available individual scores DB. Stores scores and their proofs.
@@ -104,13 +118,13 @@ class FileBasedDB {
 class ScoreExplorer {
   constructor(workdir) {
     this.fileBasedDB = new FileBasedDB(workdir)
-    this.publishedDir = 'published'
+    this.publishedDir = 'explorer'
   }
-  publishBundle(subBundle) {
+  publishBundle(subBundlePublic) {
     return this.fileBasedDB.save(
       [this.publishedDir],
-      subBundle.public.subBundleID.slice(-6) + '.json',
-      JSON.stringify(subBundle, null, 2))
+      subBundlePublic.subBundleID.slice(-6) + '.json',
+      JSON.stringify(subBundlePublic, null, 2))
   }
 }
 
@@ -123,6 +137,11 @@ class LocalDB {
     this.workdir = workdir
     this.unprocessedDir = 'unprocessed'
     this.liveDir = 'live'
+    this.fileBasedDB = new FileBasedDB(workdir)
+  }
+
+  _getSubBundleFileName(subBundle) {
+    return subBundle.public.subBundleID.slice(-6) + '.json'
   }
 
   // saves subBundle "as is" into a JSON file
@@ -130,12 +149,12 @@ class LocalDB {
     // production add date as prefix
     return this.fileBasedDB.save(
       [this.unprocessedDir],
-      subBundle.public.subBundleID.slice(-6) + '.json',
+      this._getSubBundleFileName(subBundle),
       JSON.stringify(subBundle, null, 2))
   }
 
   // saves subBundle "as is" into a JSON file
-  storeProcessed(subBundle) {
+  storeAsProcessed(subBundle) {
     // production add date as prefix
     const slicedBundleName = subBundle.public.bundleID.slice(-6)
     const slicedSubBundleName = subBundle.public.subBundleID.slice(-6)
@@ -146,15 +165,16 @@ class LocalDB {
     )
   }
 
-  clearUnprocessed() {
-    this.fileBasedDB.clearDir([this.unprocessedDir])
+  clearUnprocessed(subBundle) {
+    const filename = this._getSubBundleFileName(subBundle)
+    this.fileBasedDB.delete([this.unprocessedDir, filename])
   }
 
   // retrieves subBundle object from JSON
   getUnprocessedSubBundle() {
     const unprocessed = this.fileBasedDB.getOneFile([this.unprocessedDir])
     if (unprocessed) {
-      return JSON.parse(unprocessed)
+      return unprocessed
     } else {
       // returning empty subBundle
       return { public: {} }
@@ -280,10 +300,10 @@ class PoolManager {
     } catch (error) {
       throw error
     } finally {
-      if (subBundle.dbTransaction) {
+      if (this.subBundle.dbTransaction) {
         this.subBundle.status = "live"
         this.localDB.storeAsProcessed(this.subBundle)
-        this.localDB.clearUnprocessed()
+        this.localDB.clearUnprocessed(this.subBundle)
       } else {
         this.subBundle.status = "unprocessed"
         this.localDB.storeAsUnprocessed(this.subBundle)
@@ -451,8 +471,8 @@ async function main() {
   const poolManagerWallet = ethers.Wallet.fromMnemonic(mnemonic).connect(provider)
 
   // deploy pool
-  // const poolContract = await deployPool(poolType = 'SignedScoresPool', wallet = poolManagerWallet)
-  const poolContract = await attachToPool('SignedScoresPool', poolManagerWallet, "0x524F04724632eED237cbA3c37272e018b3A7967e")
+  const poolContract = await deployPool(poolType = 'SignedScoresPool', wallet = poolManagerWallet)
+  // const poolContract = await attachToPool('SignedScoresPool', poolManagerWallet, "0x524F04724632eED237cbA3c37272e018b3A7967e")
 
   // manage pool
   const poolManager = new PoolManager(
@@ -465,9 +485,9 @@ async function main() {
   ]
   
   // await poolManager.publishNew(users)
-  await poolManager.append(users, "0x000000000000000000000000000000007f3e126d15c10f83dfd0fd257e7030e1")
+  // await poolManager.append(users, "0x000000000000000000000000000000007f3e126d15c10f83dfd0fd257e7030e1")
   
-  // await poolManager.process()
+  await poolManager.process()
 
   console.log('pool address:', poolContract.address)
   // console.log('approvedToken:', await poolContract.approvedToken())
