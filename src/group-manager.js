@@ -4,6 +4,9 @@ const path = require('path')
 const fs = require('fs')
 const _objectHash = require('object-hash')
 
+// TODO
+// if bundle has error, remove from unprocessed to discarded dir
+
 // Production TODOs (see "production" comments)
 // better Error handling (causes)
 // decide on ethereum interaction (a function that get a tx and reports to user)
@@ -68,7 +71,7 @@ class FileBasedDB {
   }
 
   _createDir(relativeDirArray) {
-    let path = ''
+    let path = this.workdir
     relativeDirArray.forEach(dir => {
       path = path + "/" + dir
       this._checkOrCreateDir(path) });
@@ -76,9 +79,8 @@ class FileBasedDB {
 
   save(relativeDirArray, fileName, fileContents) {
 
-    this._createDir([this.workdir, ...relativeDirArray])
+    this._createDir(relativeDirArray)
     // todo build relativeDirArray out of array
-
 
     const fullDir = this._buildFullDir(relativeDirArray)
     fs.writeFileSync(path.join(fullDir, fileName), fileContents)
@@ -86,10 +88,11 @@ class FileBasedDB {
   }
 
   getOneFile(relativeDirArray) {
+    this._createDir(relativeDirArray)
     const fullDir = this._buildFullDir(relativeDirArray)
-    const unprocessed = fs.readdirSync(fullDir)
-    if (unprocessed[0]) {
-      return JSON.parse(fs.readFileSync(path.join(fullDir, unprocessed[0])))
+    const files = fs.readdirSync(fullDir)
+    if (files[0]) {
+      return JSON.parse(fs.readFileSync(path.join(fullDir, files[0])))
     } else {
       return null
     }
@@ -294,16 +297,19 @@ class PoolManager {
       if (this.subBundle.ethTx && !this.subBundle.ethTxMined) {
         await this._waitTx()
       }
-      if (this.subBundle.ethTxMined && !this.subBundle.dbTransaction) {
-        await this._pushToRemoteDb()
+      if (this.subBundle.ethTxMined 
+          && typeof(this.subBundle.dbTransaction) == "undefined") {
+        this.subBundle.dbTransaction = await this._pushToRemoteDb()
       }
     } catch (error) {
       throw error
     } finally {
       if (this.subBundle.dbTransaction) {
+        if (this.subBundle.status == "unprocessed") {
+          this.localDB.clearUnprocessed(this.subBundle)
+        }
         this.subBundle.status = "live"
         this.localDB.storeAsProcessed(this.subBundle)
-        this.localDB.clearUnprocessed(this.subBundle)
       } else {
         this.subBundle.status = "unprocessed"
         this.localDB.storeAsUnprocessed(this.subBundle)
@@ -408,7 +414,7 @@ class PoolManager {
       await tx.wait(1)
       this.subBundle.ethTxMined = true
     } else {
-      this.subBundle.error = 'BundleID already on chain'
+      throw new Error('BundleID already on chain')
     }
   }
 
@@ -428,7 +434,7 @@ class PoolManager {
 
   // pushes signed scores to ScoreExplorer (makes them publically available)
   async _pushToRemoteDb() {
-    this.subBundle.dbTransaction = this.scoreExplorer.publishBundle(this.subBundle.public)
+    return this.scoreExplorer.publishBundle(this.subBundle.public)
   }
 
 
@@ -463,41 +469,4 @@ class PoolManager {
   }
 }
 
-
-async function main() {
-  // setup wallet
-  const provider = new ethers.providers.JsonRpcProvider('http://localhost:8545')
-  const mnemonic = 'test test test test test test test test test test test junk'
-  const poolManagerWallet = ethers.Wallet.fromMnemonic(mnemonic).connect(provider)
-
-  // deploy pool
-  const poolContract = await deployPool(poolType = 'SignedScoresPool', wallet = poolManagerWallet)
-  // const poolContract = await attachToPool('SignedScoresPool', poolManagerWallet, "0x524F04724632eED237cbA3c37272e018b3A7967e")
-
-  // manage pool
-  const poolManager = new PoolManager(
-    poolContract,
-    "/Users/petrporobov/Projects/group-manager/workdir",
-    "/Users/petrporobov/Projects/group-manager/workdir")
-  const users = [
-    { address: '0x2819c144d5946404c0516b6f817a960db37d4929', score: "4" },
-    { address: '0xdac17f958d2ee523a2206206994597c13d831ec7', score: "5" }
-  ]
-  
-  // await poolManager.publishNew(users)
-  // await poolManager.append(users, "0x000000000000000000000000000000007f3e126d15c10f83dfd0fd257e7030e1")
-  
-  await poolManager.process()
-
-  console.log('pool address:', poolContract.address)
-  // console.log('approvedToken:', await poolContract.approvedToken())
-}
-
-main()
-  .then(() => process.exit(0) )
-  .catch((error) => {
-    console.error(error)
-    process.exit(1)
-  })
-
-module.exports = PoolManager
+module.exports = { deployPool, attachToPool, PoolManager }
