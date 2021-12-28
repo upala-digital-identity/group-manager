@@ -159,10 +159,10 @@ class LocalDB {
   // saves subBundle "as is" into a JSON file
   storeAsProcessed(subBundle) {
     // production add date as prefix
-    const slicedBundleName = subBundle.public.bundleID.slice(-6)
+    // const slicedBundleName = subBundle.public.bundleID.slice(-6)
     const slicedSubBundleName = subBundle.public.subBundleID.slice(-6)
     return this.fileBasedDB.save(
-      [this.liveDir, slicedBundleName],
+      [this.liveDir, subBundle.public.bundleID],
       slicedSubBundleName + '.json',
       JSON.stringify(subBundle, null, 2)
     )
@@ -186,7 +186,7 @@ class LocalDB {
 
   // returns list of all public subBundles
   getActiveBundlesList() {
-    return getFoldersList([this.liveDir])
+    return this.fileBasedDB.getFoldersList([this.liveDir])
   }
 }
 
@@ -275,7 +275,7 @@ class PoolManager {
     // production. check if this is Signed scores pool
     this._requireCleanQueue()
     this._requireActiveBundleID(bundleID)
-
+    
     this.subBundle.users = users
     this.subBundle.public.bundleID = bundleID
     this.subBundle.ethTx = 'see the first subBundle' // skipping tx step when processing
@@ -288,6 +288,7 @@ class PoolManager {
   // if there's an unprocessed bundle, this function should be called
   async process() {
     this._requireSubBundle()
+    this._requireUniqueSubBundle()
 
     // process (saves status if fails)
     try {
@@ -341,22 +342,26 @@ class PoolManager {
     if (!this.subBundle.public.signature) {
       throw new Error('No users loaded. Publish or append users first')
     }
-    return true
   }
 
   _requireCleanQueue() {
     if (this.subBundle.public.signature) {
       throw new Error('Got users processing. Finish processing first')
     }
-    return true
   }
 
-  async _requireActiveBundleID() {
+  async _requireActiveBundleID(bundleID) {
     // production. graph
-    if (await this._isBundleOnChain()) {
-      return true
-    } else {
-      return false
+    if (!(await this._isBundleOnChain(bundleID))) {
+      throw new Error('Bundle is not on-chain')
+    }
+  }
+
+  _requireUniqueSubBundle() {
+    const found = this.localDB.getActiveBundlesList()
+      .find(bundleID => bundleID == this.subBundle.public.subBundleID)
+    if (found) {
+      throw new Error('SubBundle and Bundle data are the same')
     }
   }
 
@@ -408,7 +413,7 @@ class PoolManager {
   // pushes bundleID to pool contract (checks if bundleID is already there)
   async _pushToChain() {
     // todo "is it already onChain?" - do it with graph
-    if ((await this._isBundleOnChain()) == false) {
+    if ((await this._isBundleOnChain(this.subBundle.public.bundleID)) == false) {
       const tx = await this.pool.publishScoreBundleId(this.subBundle.public.bundleID)
       this.subBundle.ethTx = tx.hash
       await tx.wait(1)
@@ -418,9 +423,8 @@ class PoolManager {
     }
   }
 
-  async _isBundleOnChain() {
-    const timestampBN = await this.pool.scoreBundleTimestamp(
-      this.subBundle.public.bundleID)
+  async _isBundleOnChain(bundleID) {
+    const timestampBN = await this.pool.scoreBundleTimestamp(bundleID)
     return (timestampBN.toNumber() != 0)
   }
 
