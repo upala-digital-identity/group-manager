@@ -5,7 +5,9 @@ const fs = require('fs')
 const _objectHash = require('object-hash')
 
 // TODO
-// if bundle has error, remove from unprocessed to discarded dir
+// bug sometimes during random testing a live bundle folder contains only appended bundle with "ethTx": "see the first subBundle", 
+// decide? if bundle has error, remove from unprocessed to discarded dir
+// 
 
 // Production TODOs (see "production" comments)
 // better Error handling (causes)
@@ -100,9 +102,18 @@ class FileBasedDB {
 
   getFoldersList(relativeDirArray) {
     const fullDir = this._buildFullDir(relativeDirArray)
-    return fs.readdirSync(fullDir).filter(function (file) {
-      return fs.statSync(fullDir + '/' + file).isDirectory()
-    })
+
+    try {
+      return fs.readdirSync(fullDir).filter(function (file) {
+        return fs.statSync(fullDir + '/' + file).isDirectory()
+      })
+    } catch (err) { 
+      if (err.code === 'ENOENT') {
+        return []
+      } else {
+        throw err;
+      }
+    }
   }
 
   delete(relativeDirArray) {
@@ -450,8 +461,8 @@ class PoolManager {
   // Probably these are not even needed (interact with the cotract on client?)
   // retrieves base score from pool contract
   // production. use Graph?
-  async getBaseScore() {
-    return await this.pool.baseScore()
+  getBaseScore() {
+    return this.pool.baseScore()
   }
 
   // sets new base score on the pool contract
@@ -459,6 +470,7 @@ class PoolManager {
     // todo same logic as with deleteScoreBundleId
     this.pool.setBaseScore(newScore)
   }
+  // sets new base score on the pool contract
 
   // withdraws pool contract funds
   async withdrawFromPool(recipient, amount) {
