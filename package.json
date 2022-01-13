@@ -4,11 +4,14 @@
     "name": "Petr Porobov"
   },
   "description": "Tools for upala group managers",
-  "version": "0.1",
+  "version": "0.1.0",
   "main": "src/group-manager.js",
   "homepage": "https://docs.upala.io",
   "keywords": [
-    "upala"
+    "upala",
+    "price of forgery",
+    "DID",
+    "Proof of personhood"
   ],
   "repository": {
     "type": "git",
