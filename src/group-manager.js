@@ -336,10 +336,7 @@ class PoolManager {
 
   // deletes score bundle from the pool (calls pool contract)
   async deleteScoreBundleId(scoreBundleId) {
-    const tx = await this.pool.deleteScoreBundleId(scoreBundleId)
-    this.userMessageCallback({ message: tx })
-    const mined = tx.wait()
-    this.userMessageCallback({ message: tx })
+    this.pool.deleteScoreBundleId(scoreBundleId)
   }
 
 
