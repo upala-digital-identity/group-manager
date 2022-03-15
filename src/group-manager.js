@@ -18,12 +18,18 @@ POOL INITIALIZATION
 *******************/
 
 // deploys new pool through a pool factory of selected pool type
-async function deployPool(poolType, wallet) {
+async function deployPool(poolType, wallet, upalaConstants) {
   // Prepare pool factory (get address from constants depending on chainID)
-  const upConsts = new UpalaConstants(await wallet.getChainId())
-  const poolFactoryTemp = upConsts.getContract(poolType + 'Factory', wallet)
-
+  let upConsts
+  if (upalaConstants) {
+    upConsts = upalaConstants
+  } else {
+    // future. this is side-effect
+    // future. remove upala constants from here, always pass in args
+    upConsts = new UpalaConstants(await wallet.getChainId())
+  }
   // Spawn a new pool from pool factory
+  const poolFactoryTemp = upConsts.getContract(poolType + 'Factory', wallet)
   const tx = await poolFactoryTemp.connect(wallet).createPool()
 
   // retrieve new pool address from Upala event (todo - is there an easier way?)
