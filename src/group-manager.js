@@ -283,7 +283,7 @@ class PoolManager {
     this.subBundle.users = users
 
     await this._createSubBundle()
-    await this.process()
+    return await this.process()  // keeping await for cli compatibility for now
   }
 
   // if queue is clean scores can be appended to an existing bundle
@@ -299,7 +299,7 @@ class PoolManager {
     this.subBundle.ethTxMined = true // skipping tx step
 
     await this._createSubBundle()
-    await this.process()
+    return await this.process()
   }
 
   // if there's an unprocessed bundle, this function should be called
@@ -328,9 +328,11 @@ class PoolManager {
         }
         this.subBundle.status = "live"
         this.localDB.storeAsProcessed(this.subBundle)
+        return this.subBundle
       } else {
         this.subBundle.status = "unprocessed"
         this.localDB.storeAsUnprocessed(this.subBundle)
+        return null  // todo think of error, result pattern here
       }
     }
   }
@@ -387,7 +389,7 @@ class PoolManager {
       const message = utils.solidityKeccak256(
         ['address', 'uint8', 'bytes32'], 
         [user.address, user.score, bundleID])
-      user.signature = await signer.signMessage(message)
+      user.signature = await signer.signMessage(ethers.utils.arrayify(message))
     }
     return signedUsers
   }
