@@ -1,4 +1,4 @@
-const { UpalaConstants } = require('@upala/constants')
+const { UpalaConstants, numConfirmations } = require('@upala/constants')
 const { ethers, utils } = require('ethers')
 const path = require('path')
 const fs = require('fs')
@@ -20,20 +20,21 @@ POOL INITIALIZATION
 // deploys new pool through a pool factory of selected pool type
 async function deployPool(poolType, wallet, upalaConstants) {
   // Prepare pool factory (get address from constants depending on chainID)
+  const chainId = await wallet.getChainId()
   let upConsts
   if (upalaConstants) {
+    // mainly needed for tests (test don't load constants from disk)
     upConsts = upalaConstants
   } else {
-    // future. this is side-effect
-    // future. remove upala constants from here, always pass in args
-    upConsts = new UpalaConstants(await wallet.getChainId())
+    // for all other clients of group-manager upConstants is built in
+    upConsts = new UpalaConstants(chainId)
   }
   // Spawn a new pool from pool factory
   const poolFactoryTemp = upConsts.getContract(poolType + 'Factory', wallet)
   const tx = await poolFactoryTemp.connect(wallet).createPool()
 
   // retrieve new pool address from Upala event (todo - is there an easier way?)
-  const blockNumber = (await tx.wait(1)).blockNumber
+  const blockNumber = (await tx.wait(numConfirmations(chainId))).blockNumber
   const upala = upConsts.getContract('Upala', wallet)
   const eventFilter = upala.filters.NewPool()
   const events = await upala.queryFilter(eventFilter, blockNumber, blockNumber)
@@ -269,7 +270,6 @@ class PoolManager {
   }
 
 
-
   /*************
   MANAGE BUNDLES
   **************/
@@ -279,6 +279,9 @@ class PoolManager {
 
   // if queue is clean new score bundle can be created
   async publishNew(users) {
+    // todo! todo! subBundle data persists after successful publishing
+    // maybe create subBundle class?
+    // ... and allow unprocessed bundles? 
     this._requireCleanQueue()
     this.subBundle.users = users
 
@@ -344,7 +347,9 @@ class PoolManager {
 
   // deletes score bundle from the pool (calls pool contract)
   async deleteScoreBundleId(scoreBundleId) {
-    this.pool.deleteScoreBundleId(scoreBundleId)
+    let tx = await this.pool.deleteScoreBundleId(scoreBundleId)
+    await tx.wait(numConfirmations(await this.signer.getChainId()))
+    return true
   }
 
 
@@ -432,7 +437,7 @@ class PoolManager {
     if ((await this._isBundleOnChain(this.subBundle.public.bundleID)) == false) {
       const tx = await this.pool.publishScoreBundleId(this.subBundle.public.bundleID)
       this.subBundle.ethTx = tx.hash
-      await tx.wait(1)
+      await tx.wait(numConfirmations(await this.signer.getChainId()))
       this.subBundle.ethTxMined = true
     } else {
       throw new Error('BundleID already on chain')
@@ -446,7 +451,7 @@ class PoolManager {
 
   // waits for the push tx to be mined
   async _waitTx() {
-    const confirmations = 1
+    const confirmations = numConfirmations(await this.signer.getChainId())
     if (await this.signer.provider.waitForTransaction(this.subBundle.ethTx, confirmations)) {
       this.subBundle.ethTxMined = true
     }
