@@ -478,7 +478,7 @@ class PoolManager {
   // sets new base score on the pool contract
   async setBaseScore(newScore) {
     // todo same logic as with deleteScoreBundleId
-    this.pool.setBaseScore(newScore)
+    return this.pool.setBaseScore(newScore)
   }
   // sets new base score on the pool contract
 
