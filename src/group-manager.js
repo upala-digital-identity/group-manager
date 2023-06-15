@@ -1,4 +1,4 @@
-const { UpalaConstants, numConfirmations } = require('@upala/constants')
+const { UpalaConstants, numConfirmations, isTestNetwork } = require('@upala/constants')
 const { ethers, utils } = require('ethers')
 const path = require('path')
 const fs = require('fs')
@@ -13,22 +13,34 @@ const _objectHash = require('object-hash')
 // better Error handling (causes)
 // decide on ethereum interaction (a function that get a tx and reports to user)
 
+
+/******************
+HELPERS
+*******************/
+// loads constants from disk by chainId if no upalaConstants provided
+// if upalaConstants provided will return them
+function _getUpalaConstants(chainId, upalaConstantsOverride) {
+  if (upalaConstantsOverride) {
+    // mainly needed for local tests (test don't load constants from disk)
+    return upalaConstantsOverride
+  } else {
+    // for all other clients of group-manager upConstants is built in
+    return new UpalaConstants(chainId)
+  }
+}
+
 /******************
 POOL INITIALIZATION 
 *******************/
 
 // deploys new pool through a pool factory of selected pool type
-async function deployPool(poolType, wallet, upalaConstants) {
+// poolType - string (e.g. "SignedScoresPool" - must correspond to pool contract names)
+// wallet - pool manager wallet
+// upalaConstants - optional (must be empty for anything other than local testing)
+async function deployPool(poolType, wallet, upalaConstantsOverride) {
   // Prepare pool factory (get address from constants depending on chainID)
   const chainId = await wallet.getChainId()
-  let upConsts
-  if (upalaConstants) {
-    // mainly needed for tests (test don't load constants from disk)
-    upConsts = upalaConstants
-  } else {
-    // for all other clients of group-manager upConstants is built in
-    upConsts = new UpalaConstants(chainId)
-  }
+  let upConsts = _getUpalaConstants(chainId, upalaConstantsOverride)
   // Spawn a new pool from pool factory
   const poolFactoryTemp = upConsts.getContract(poolType + 'Factory', wallet)
   const tx = await poolFactoryTemp.connect(wallet).createPool()
@@ -48,6 +60,43 @@ async function deployPool(poolType, wallet, upalaConstants) {
 async function attachToPool(poolType, wallet, poolAddress, upalaConstants) {
   const upConsts = (upalaConstants) ? upalaConstants : new UpalaConstants(await wallet.getChainId())
   return upConsts.getContract(poolType, wallet, poolAddress) // pool contact as per ethersJS
+}
+
+// TODO see _signUsers fucntion
+// on future refactor leave ability to sign scores without initializing pool 
+// function is used this way in gitcoin liquidator
+async function signUser(userAddress, userScore, bundleID, signer) {
+    const message = utils.solidityKeccak256(
+      ['address', 'uint8', 'bytes32'], 
+      [userAddress, userScore, bundleID])
+    return await signer.signMessage(ethers.utils.arrayify(message))
+}
+
+// TODO use this function for subBundle ID generation
+// this function may be useful in creating custom Bundle IDs
+// like the ones creted for gitcoin integration
+function hexZeroPadded(aBytesLike) {
+  return ethers.utils.hexZeroPad('0x' + aBytesLike, 32) 
+}
+
+/******************
+DEMO HELPERS
+*******************/
+// senderWallet - ethers.js wallet object
+// recipientAddress - string Ehtereum address
+// wei - amount in wei (Big Number or compatible)
+async function mintDaiTo(chainId, senderWallet, recipientAddress, wei) {
+  // works only for testnetworks and with FakeDai deployed (see Upala contracts)
+  if (isTestNetwork(chainId)) {
+    // load constants from libs (because mintDaiTo never used for local testing)
+    const upConsts = new UpalaConstants(chainId)
+    const dai = upConsts.getContract('DAI', senderWallet)
+    const tx = await dai.freeDaiToTheWorld(recipientAddress, wei)
+    await tx.wait(numConfirmations(chainId))
+    return tx.hash
+  } else {
+    throw new Error("Cannot mint DAI on real networks")
+  }
 }
 
 // Graph gateway
@@ -348,6 +397,7 @@ class PoolManager {
   // deletes score bundle from the pool (calls pool contract)
   async deleteScoreBundleId(scoreBundleId) {
     let tx = await this.pool.deleteScoreBundleId(scoreBundleId)
+    // todo production return tx hash
     await tx.wait(numConfirmations(await this.signer.getChainId()))
     return true
   }
@@ -388,6 +438,7 @@ class PoolManager {
 
   // sign individual scores
   // the signatures will be used by smart contract to prove user score
+  // TODO refactor to using signUser funciton
   async _signUsers(users, bundleID, signer) {
     const signedUsers = users
     for (const user of signedUsers) {
@@ -398,6 +449,7 @@ class PoolManager {
     }
     return signedUsers
   }
+
 
   // creates proof for users scores, signes public data
   async _createSubBundle() {
@@ -495,4 +547,11 @@ class PoolManager {
   }
 }
 
-module.exports = { deployPool, attachToPool, PoolManager }
+module.exports = { 
+  deployPool,
+  attachToPool,
+  mintDaiTo,
+  PoolManager,
+  signUser,
+  hexZeroPadded,
+ }
